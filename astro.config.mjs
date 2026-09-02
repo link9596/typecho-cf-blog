@@ -14,6 +14,7 @@ export default defineConfig({
   adapter: cloudflare({
     imageService: 'passthrough',
     inspectorPort: isBuild ? false : undefined,
+    functionPerRoute: false,
   }),
   security: {
     checkOrigin: true,
