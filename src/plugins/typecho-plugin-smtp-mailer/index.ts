@@ -126,6 +126,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     _result: MailResult | null,
     extra?: { payload?: MailPayload; ctx?: MailContext },
   ): Promise<MailResult> => {
+    console.log('[SMTP-DEBUG] mail:send triggered, extra:', JSON.stringify(extra, null, 2));
     const payload = extra?.payload;
     const ctx = extra?.ctx;
     const config = readConfig(ctx?.options);
