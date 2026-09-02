@@ -21,12 +21,9 @@
 
 </div>
   
-
 可以部署在Cloudflare上的 [Typecho](https://typecho.org) 博客，运行在 **Astro + Cloudflare Workers + D1** 之上。保留 Typecho 数据库表结构，支持从 PHP 版 Typecho 直接迁移数据。
 
 该版本基于原仓库 [Typecho-CF](https://github.com/eslizn/typecho-cf) 进行了深度性能优化和改进了后台写作体验。
-
-
 
 ---
 
