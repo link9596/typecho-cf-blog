@@ -1,5 +1,5 @@
 name = "typecho-cf"
-main = "src/worker.ts"
+main = "@astrojs/cloudflare/entrypoints/server"
 compatibility_date = "2026-08-02"
 compatibility_flags = [ "nodejs_compat" ]
 
