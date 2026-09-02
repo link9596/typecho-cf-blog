@@ -126,7 +126,6 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     _result: MailResult | null,
     extra?: { payload?: MailPayload; ctx?: MailContext },
   ): Promise<MailResult> => {
-    console.log('[SMTP-DEBUG] mail:send triggered, extra:', JSON.stringify(extra, null, 2));
     const payload = extra?.payload;
     const ctx = extra?.ctx;
     const config = readConfig(ctx?.options);
@@ -193,65 +192,36 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     };
   });
 
-  // ── 插件设置页：配置摘要 + 测试发送 ──
-addHook('admin:footer', pluginId, (
-  html: string,
-  extra?: { activeMenu?: string; user?: { group?: string } },
-) => {
-  // 仅管理员可见
-  if (extra?.user?.group && !hasPermission(extra.user.group, 'administrator')) return html;
+  // ── 插件专属设置页：配置摘要 + 测试发送 ──
+  addHook('admin:page', pluginId, (
+    html: string,
+    extra?: { slug?: string; csrfToken?: string; options?: Record<string, unknown> },
+  ) => {
+    if (extra?.slug !== ADMIN_SLUG) return html;
+    return renderAdminPage(extra.csrfToken || '', extra.options);
+  });
 
-  // 1. 左侧导航注入
-  const isActive = extra?.activeMenu === ADMIN_SLUG;
-  const extraHtml = `<script>
+  // ── 后台导航注入 ──
+  addHook('admin:footer', pluginId, (
+    html: string,
+    extra?: { activeMenu?: string; user?: { group?: string } },
+  ) => {
+    if (extra?.user?.group && !hasPermission(extra.user.group, 'administrator')) return html;
+    const isActive = extra?.activeMenu === ADMIN_SLUG;
+    const extraHtml = `<script>
 (function(){
   var mgmt = document.querySelector('#typecho-nav-list ul.root:nth-child(3) ul.child');
   if (mgmt && !document.getElementById('nav-smtp-mailer')) {
     var li = document.createElement('li');
     li.id = 'nav-smtp-mailer';
     li.className = '${isActive ? 'focus' : ''}';
-    li.innerHTML = '<a href="/admin/plugin/${ADMIN_SLUG}">SMTP Mailer</a>';
+    li.innerHTML = '<a href="/admin/plugin/smtp-mailer">SMTP Mailer</a>';
     mgmt.appendChild(li);
   }
 })();
 </script>`;
-
-  // 2. 配置页定制（顶部按钮 + 底部提示）
-  const linkScript = `<script>
-(function(){
-  if (window.location.pathname === '/admin/plugin-config' && new URLSearchParams(window.location.search).get('id') === '${PLUGIN_ID}') {
-    var container = document.querySelector('#typecho-option-page');
-    if (!container) return;
-
-    // ── 顶部：前往测试页按钮 ──
-    var pTop = document.createElement('p');
-    pTop.style.margin = '0 0 1.2em 0';
-    var link = document.createElement('a');
-    link.href = '/admin/plugin/${ADMIN_SLUG}';
-    link.className = 'btn';
-    link.textContent = '前往测试邮件发送';
-    link.style.cssText = 'border: none; background-color: #467B96; cursor: pointer; border-radius: 2px; color: #FFF; padding: 6px 14px; font-size: 13px; text-decoration: none; display: inline-block;';
-    link.onmouseover = function() { this.style.backgroundColor = '#36627A'; };
-    link.onmouseout = function() { this.style.backgroundColor = '#467B96'; };
-    pTop.appendChild(link);
-    container.insertBefore(pTop, container.firstChild);
-
-    var p1 = document.createElement('p');
-    p1.className = 'description';
-    p1.style.marginTop = '1.2em';
-    p1.innerHTML = '配置完毕后需在 <a href="/admin/options-general">设置</a> 页面启用邮件发送';
-    container.appendChild(p1);
-
-    var p2 = document.createElement('p');
-    p2.className = 'description';
-    p2.innerHTML = '如需开启评论邮件提醒，请前往 设置 > <a href="/admin/options-discussion">评论</a> 页开启相关功能';
-    container.appendChild(p2);
-  }
-})();
-</script>`;
-
-  return html + extraHtml + linkScript;
-});
+    return html + extraHtml;
+  });
 
   // ── 动作鉴权：test-send 仅管理员 ──
   addHook(`plugin:${PLUGIN_ID}:action:auth`, pluginId, (_role: string) => 'administrator');
