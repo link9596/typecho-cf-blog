@@ -1,7 +1,7 @@
 {
   "name": "typecho-plugin-smtp-mailer",
   "version": "1.0.0",
-  "description": "SMTP 邮件发送适配器（基于 @workermailer/smtp）：实现 mail:send Hook，为评论通知、回复提醒和密码重置邮件提供投递能力，支持一键发送测试邮件",
+  "description": "SMTP 邮件发送适配器，为评论通知、回复提醒和密码重置邮件提供投递能力，并支持在设置页一键发送测试邮件",
   "type": "module",
   "keywords": [
     "typecho",
@@ -16,7 +16,7 @@
     ".": "./index.ts",
     "./index.ts": "./index.ts"
   },
-  "author": "eslizn",
+  "author": "Link",
   "license": "MIT",
   "dependencies": {
     "@workermailer/smtp": "^0.2.1"
@@ -25,11 +25,11 @@
     "plugin": {
       "id": "typecho-plugin-smtp-mailer",
       "name": "SMTP Mailer",
-      "description": "SMTP 邮件发送适配器：基于 @workermailer/smtp 实现 mail:send，为评论通知、回复提醒和密码重置邮件提供投递能力，并支持在设置页一键发送测试邮件",
-      "author": "eslizn",
-      "authorUrl": "https://eslizn.com",
+      "description": "SMTP 邮件发送适配器，为评论通知、回复提醒和密码重置邮件提供投递能力，并支持在设置页一键发送测试邮件",
+      "author": "Link",
+      "authorUrl": "https://atlinker.cn",
       "version": "1.0.0",
-      "homepage": "https://github.com/eslizn/typecho-cf/tree/master/src/plugins/typecho-plugin-smtp-mailer",
+      "homepage": "https://github.com/link9596",
       "license": "MIT",
       "tags": [
         "mail",
