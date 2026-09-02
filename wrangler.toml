@@ -9,7 +9,7 @@ binding = "ASSETS"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "typecho-cf-db"
+database_name = "typecho-cf-db-film"
 migrations_dir = "drizzle"
 
 [[r2_buckets]]
