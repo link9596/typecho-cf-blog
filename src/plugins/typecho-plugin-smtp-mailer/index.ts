@@ -286,7 +286,7 @@ function renderAdminPage(csrfToken: string, options?: Record<string, unknown>): 
 
   return `<div class="col-mb-12" style="max-width:760px">
   <h2 style="margin-bottom:.5em">SMTP Mailer 设置</h2>
-  <p style="color:#999;font-size:.92857em">基于 <code>@workermailer/smtp</code> 的 SMTP 邮件适配器。启用后，<a href="/admin/options-general">常规设置</a> 中的「启用邮件发送」与 <a href="/admin/options-discussion">讨论设置</a> 中的「有新评论时发送邮件通知」才会真正投递邮件（含评论回复提醒与密码重置邮件）。</p>
+  <p style="color:#999;font-size:.92857em">基于 <code>@workermailer/smtp</code> 的 SMTP 邮件适配器。启用后，<a href="/admin/options-general">常规设置</a> 中的「启用邮件发送」与 <a href="/admin/options-discussion">评论设置</a> 中的「有新评论时发送邮件通知」才会真正投递评论提醒邮件（含评论回复提醒与密码重置邮件）。</p>
 
   <h3 style="margin:1.2em 0 .5em">当前配置</h3>
   <table style="width:100%;border-collapse:collapse">${rows}</table>
