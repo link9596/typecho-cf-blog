@@ -229,7 +229,7 @@ addHook('admin:footer', pluginId, (
     var link = document.createElement('a');
     link.href = '/admin/plugin/${ADMIN_SLUG}';
     link.className = 'btn';
-    link.textContent = '📧 前往 SMTP 测试页发送测试邮件 →';
+    link.textContent = '前往测试邮件发送';
     link.style.cssText = 'border: none; background-color: #467B96; cursor: pointer; border-radius: 2px; color: #FFF; padding: 6px 14px; font-size: 13px; text-decoration: none; display: inline-block;';
     link.onmouseover = function() { this.style.backgroundColor = '#36627A'; };
     link.onmouseout = function() { this.style.backgroundColor = '#467B96'; };
