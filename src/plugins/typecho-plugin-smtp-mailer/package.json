@@ -42,7 +42,7 @@
           "type": "text",
           "label": "SMTP 服务器",
           "default": "",
-          "description": "例如 smtp.qq.com / smtp.163.com / smtp.gmail.com。Cloudflare Workers 不支持 25 端口，请使用 465 或 587<br>配置完毕后需在 <a href="/admin/options-general">设置</a> 页面启用邮件发送<br><br><a href="/admin/plugin/smtp-mailer">测试邮件发送</a>"
+          "description": "例如 smtp.qq.com / smtp.163.com / smtp.gmail.com。Cloudflare Workers 不支持 25 端口，请使用 465 或 587可选<br><br>配置完毕后需在 <a href=\"/admin/options-general\">设置</a> 页面启用邮件发送<br>如需开启评论邮件提醒，请前往 <a href=\"/admin/options-discussion\">评论</a> 页开启"
         },
         "port": {
           "type": "text",
