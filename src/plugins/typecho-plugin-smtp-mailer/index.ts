@@ -236,7 +236,6 @@ addHook('admin:footer', pluginId, (
     pTop.appendChild(link);
     container.insertBefore(pTop, container.firstChild);
 
-    // ── 底部：两个提示信息 ──
     var p1 = document.createElement('p');
     p1.className = 'description';
     p1.style.marginTop = '1.2em';
