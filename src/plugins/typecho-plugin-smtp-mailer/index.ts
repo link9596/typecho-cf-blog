@@ -4,14 +4,14 @@
  * SMTP 邮件发送适配器（基于 `@workermailer/smtp`，Cloudflare TCP Sockets）。
  *
  * 职责：
- *  - 实现 `mail:send` filter hook：将发送任务入队到 Cloudflare Queues，
- *    由后台队列消费者真正投递，避免请求超时；
+ *  - 实现 `mail:send` filter hook：核心 `sendMail()` 的投递请求由此适配器完成，
+ *    评论通知（notifyOnComment）、评论回复提醒、密码重置邮件全部自动生效；
  *  - `plugin:config:beforeSave`：保存前校验并规范化 SMTP 配置；
  *  - 插件专属设置页（/admin/plugin/smtp-mailer）：展示当前配置摘要，
- *    并支持一键发送测试邮件（也入队）。
+ *    并支持一键发送测试邮件（`reason: 'test'`）。
  *
  * 说明：
- *  - 发件人使用站点级选项 `mailFrom` / `mailFromName`；
+ *  - 发件人使用站点级选项 `mailFrom` / `mailFromName`（核心 `sendMail()` 已校验）；
  *  - Cloudflare Workers 不允许 25 端口出站，端口需为 465（SSL/TLS）或 587（STARTTLS）；
  *  - `@workermailer/smtp` 需要 `nodejs_compat` compatibility flag（项目已配置）。
  */
@@ -19,7 +19,7 @@ import { parsePluginOption, escapeAttr, hasPermission } from 'typecho/plugin-sdk
 import type { PluginInitContext } from 'typecho/plugin-sdk';
 import { WorkerMailer } from '@workermailer/smtp';
 import type { WorkerMailerOptions, EmailOptions } from '@workermailer/smtp';
-import { isValidEmail } from '@/lib/mail';
+import { sendMail, isValidEmail } from '@/lib/mail';
 import type { MailPayload, MailContext, MailResult } from '@/lib/mail';
 
 export const PLUGIN_ID = 'typecho-plugin-smtp-mailer';
@@ -121,17 +121,11 @@ function escapeHtml(value: unknown): string {
 }
 
 export default function init({ addHook, pluginId }: PluginInitContext): void {
-  // ── mail:send 适配器：改为入队，让后台消费者真正发送 ──
+  // ── mail:send 适配器：首个返回 sent:true 的插件完成投递 ──
   addHook('mail:send', pluginId, async (
     _result: MailResult | null,
     extra?: { payload?: MailPayload; ctx?: MailContext },
   ): Promise<MailResult> => {
-    console.log('[SMTP-DEBUG] mail:send triggered (queued)', {
-      hasPayload: !!extra?.payload,
-      to: extra?.payload?.to,
-      subject: extra?.payload?.subject,
-    });
-
     const payload = extra?.payload;
     const ctx = extra?.ctx;
     const config = readConfig(ctx?.options);
@@ -146,47 +140,17 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     const from = String(ctx?.options?.mailFrom ?? '');
     const fromName = String(ctx?.options?.mailFromName ?? '');
 
-    // 获取全局 env（由 src/index.ts 注入）
-    const env = (globalThis as any).__ENV;
-    if (!env || !env.EMAIL_QUEUE) {
-      return { sent: false, provider: PROVIDER, error: 'queue-unavailable' };
-    }
-
-    // 构造队列消息（包含所有邮件数据 + SMTP 配置）
-    const mailData = {
-      to: payload.to,
-      toName: payload.toName,
-      subject: payload.subject,
-      html: payload.html,
-      text: payload.text,
-      replyTo: payload.replyTo,
-      headers: payload.headers,
-      from,
-      fromName,
-      smtp: {
-        host: config.host,
-        port: config.port,
-        secure: config.secure,
-        startTls: config.startTls,
-        username: config.username,
-        password: config.password,
-        authType: config.authType,
-        socketTimeoutMs: config.socketTimeoutMs,
-        responseTimeoutMs: config.responseTimeoutMs,
-      },
-    };
-
     try {
-      await env.EMAIL_QUEUE.send(mailData);
-      return { sent: true, provider: 'queue' };
+      await WorkerMailer.send(buildMailerOptions(config), buildEmailOptions(payload, from, fromName));
+      return { sent: true, provider: PROVIDER };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`[${PLUGIN_ID}] queue send failed:`, err);
+      console.error(`[${PLUGIN_ID}] send failed:`, err);
       return { sent: false, provider: PROVIDER, error: message };
     }
   });
 
-  // ── 配置保存前校验（保持不变） ──
+  // ── 配置保存前校验 ──
   addHook('plugin:config:beforeSave', pluginId, (
     result: unknown,
     extra?: { pluginId?: string; settings?: Record<string, unknown> },
@@ -228,7 +192,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     };
   });
 
-  // ── 插件专属设置页：配置摘要 + 测试发送（保持不变） ──
+  // ── 插件专属设置页：配置摘要 + 测试发送 ──
   addHook('admin:page', pluginId, (
     html: string,
     extra?: { slug?: string; csrfToken?: string; options?: Record<string, unknown> },
@@ -237,7 +201,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     return renderAdminPage(extra.csrfToken || '', extra.options);
   });
 
-  // ── 后台导航注入（保持不变） ──
+  // ── 后台导航注入 ──
   addHook('admin:footer', pluginId, (
     html: string,
     extra?: { activeMenu?: string; user?: { group?: string } },
@@ -262,7 +226,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
   // ── 动作鉴权：test-send 仅管理员 ──
   addHook(`plugin:${PLUGIN_ID}:action:auth`, pluginId, (_role: string) => 'administrator');
 
-  // ── 动作：发送测试邮件（改为入队） ──
+  // ── 动作：发送测试邮件 ──
   addHook(`plugin:${PLUGIN_ID}:action`, pluginId, async (
     result: unknown,
     extra?: {
@@ -280,49 +244,28 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     }
 
     const options = extra.options || {};
-    const config = readConfig(options);
-    if (!config.host) {
-      return { handled: true, success: false, error: 'SMTP 未配置' };
-    }
-
-    const env = (globalThis as any).__ENV;
-    if (!env || !env.EMAIL_QUEUE) {
-      return { handled: true, success: false, error: '队列不可用' };
-    }
-
-    const from = String(options?.mailFrom ?? '');
-    const fromName = String(options?.mailFromName ?? '');
     const timestamp = new Date().toISOString();
-    const subject = `[${String(options.title ?? 'Typecho')}] SMTP 测试邮件`;
-    const html = `<p>这是一封来自 Cloudflare-Typecho 的测试邮件。</p><p>发送时间：${timestamp}</p><p>如果你收到了这封邮件，说明 SMTP 配置正确。</p>`;
-    const text = `这是一封来自 Cloudflare-Typecho 的测试邮件。\n发送时间：${timestamp}\n如果你收到了这封邮件，说明 SMTP 配置正确。`;
-
-    const mailData = {
-      to,
-      subject,
-      html,
-      text,
-      from,
-      fromName,
-      smtp: {
-        host: config.host,
-        port: config.port,
-        secure: config.secure,
-        startTls: config.startTls,
-        username: config.username,
-        password: config.password,
-        authType: config.authType,
-        socketTimeoutMs: config.socketTimeoutMs,
-        responseTimeoutMs: config.responseTimeoutMs,
+    const mailResult = await sendMail(
+      { activatedPlugins: new Set([PLUGIN_ID]) },
+      {
+        to,
+        subject: `[${String(options.title ?? 'Typecho')}] SMTP 测试邮件`,
+        html: `<p>这是一封来自 Cloudflare-Typecho 的测试邮件。</p><p>发送时间：${timestamp}</p><p>如果你收到了这封邮件，说明 SMTP 配置正确。</p>`,
+        text: `这是一封来自 Cloudflare-Typecho 的测试邮件。\n发送时间：${timestamp}\n如果你收到了这封邮件，说明 SMTP 配置正确。`,
       },
-    };
+      { request: extra.request, options, reason: 'test' },
+    );
 
-    try {
-      await env.EMAIL_QUEUE.send(mailData);
-      return { handled: true, success: true, sent: true, provider: 'queue' };
-    } catch (err) {
-      return { handled: true, success: false, error: String(err) };
+    if (mailResult.sent) {
+      return { handled: true, success: true, sent: true, provider: mailResult.provider };
     }
+    return {
+      handled: true,
+      success: false,
+      sent: false,
+      provider: mailResult.provider,
+      error: mailResult.error || '发送失败',
+    };
   });
 }
 
