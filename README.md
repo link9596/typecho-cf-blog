@@ -1,4 +1,3 @@
-
 <div align="center">
 <img style="width:600px" src="https://raw.githubusercontent.com/link9596/Cloudflare-Typecho/refs/heads/master/public/img/ty-cf.svg" alt="">
 
