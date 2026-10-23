@@ -17,10 +17,9 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
     'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
     'pre', 'code', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
     'del', 'ins', 'details', 'summary', 'figure', 'figcaption',
-    'video', 'audio', 'source', 'iframe', 'div', 'center',
+    'video', 'audio', 'source', 'iframe', 'div', 'center', 'mood-player',
   ]),
   allowedAttributes: {
-    // 允许所有标签拥有 class, id, style
     '*': ['class', 'id', 'style'],
     img: ['src', 'alt', 'title', 'width', 'height', 'loading'],
     a: ['href', 'title', 'target', 'rel'],
@@ -32,7 +31,8 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
     video: ['src', 'controls', 'width', 'height', 'playsinline', 'muted', 'preload', 'class', 'style'],
     audio: ['src', 'controls'],
     source: ['src', 'type'],
-    div: ['class', 'id', 'style' , 'align'],
+    div: ['class', 'id', 'style', 'align'],
+    'mood-player': ['size', 'api'],
   },
   allowedIframeHostnames: ['www.youtube.com', 'player.bilibili.com', 'player.vimeo.com'],
 };
