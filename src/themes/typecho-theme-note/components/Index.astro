@@ -167,7 +167,7 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
                     class="post-excerpt"
                     itemprop="articleBody"
                     set:html={post.excerpt}
-                    style="margin-top: 26px; padding-left: 48px; font-size: 15px; line-height: 1.7; color: #4e5969; word-break: break-word; position: relative; z-index: 0;"
+                    style="margin-top: 26px; padding-left: 48px; font-size: 15px; line-height: 1.7; color: #4e5969; word-break: break-word; position: relative;"
                   />
 
                   {post.mediaItems.length > 0 && (
@@ -298,6 +298,11 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
 </Base>
 
 <style>
+.post-excerpt :global(mood-player) {
+  position: relative;
+  z-index: 3;
+  display: block;
+}
 .card-overlay {
   z-index: 1;
 }
