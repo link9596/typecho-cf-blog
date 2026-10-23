@@ -282,6 +282,15 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
     </div>
   </div>
 
+<!-- 引入播放器脚本（CDN） -->
+<script src="https://r2-file.lkin.cn/web/music/mood-player.min.js"></script>
+
+<!-- 创建播放器 -->
+<mood-player
+  size="large"
+  api="https://api.qijieya.cn/meting/?type=playlist&id=18003781576"
+></mood-player>
+
   <footer id="footer" role="contentinfo">
     &copy; {new Date().getFullYear()} <a href={urls.siteUrl}>{options.title}</a>.
     一起来堆雪人！
