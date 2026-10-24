@@ -19,19 +19,17 @@ const processPost = (post: any) => {
   let excerpt = post.excerpt || '';
   const mediaItems: { type: 'image' | 'livephoto'; html: string; src?: string; videoSrc?: string }[] = [];
 
-  // 1. 提取 LivePhoto 容器
   const livePhotoRegex = /<div[^>]*class="[^"]*live-photo[^"]*"[^>]*>[\s\S]*?<\/div>/g;
   let match;
   while ((match = livePhotoRegex.exec(excerpt)) !== null) {
     const html = match[0];
-    // 提取图片 src 和视频 src（用于重新构造）
     const imgMatch = html.match(/<img[^>]*src="([^">]+)"/);
     const videoMatch = html.match(/<video[^>]*>[\s\S]*?<source[^>]*src="([^">]+)"/) ||
                        html.match(/<video[^>]*src="([^">]+)"/);
     if (imgMatch) {
       mediaItems.push({
         type: 'livephoto',
-        html: html,                 // 原始容器（单图时使用）
+        html: html,
         src: imgMatch[1],
         videoSrc: videoMatch ? videoMatch[1] : undefined,
       });
@@ -39,27 +37,18 @@ const processPost = (post: any) => {
   }
   excerpt = excerpt.replace(livePhotoRegex, '');
 
-  // 2. 提取普通图片
   const imgRegex = /<img[^>]+src="([^">]+)"[^>]*>/g;
   while ((match = imgRegex.exec(excerpt)) !== null) {
-    mediaItems.push({
-      type: 'image',
-      src: match[1],
-      html: '',
-      videoSrc: undefined,
-    });
+    mediaItems.push({ type: 'image', src: match[1], html: '', videoSrc: undefined });
   }
   excerpt = excerpt.replace(/<img[^>]+>/g, '').trim();
 
-  // 3. 头像处理
   const avatarUrl = post.author?.avatarUrl || '/img/avatar.svg';
-
   return { ...post, excerpt, mediaItems, avatarUrl };
 };
 
 const processedPosts = posts.map(processPost);
 
-// 辅助：生成正方形 LivePhoto 容器（多图使用）
 function buildSquareLivePhoto(src: string, videoSrc?: string): string {
   return `<div style="position:relative; width:100%; padding-top:100%;border-radius: 0px;" class="live-photo">
     <img class="live-photo-img" src="${src}" alt="Live Photo" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover;border-radius: 0px;">
@@ -156,9 +145,9 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
                         >
                           {post.commentsNum === 0 ? '评论' : `${post.commentsNum} 条评论`}
                         </a>
-		{post.status === 'private' && (
-		<span class="meta-tags">私密</span>
-		)}
+                        {post.status === 'private' && (
+                          <span class="meta-tags">私密</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -178,7 +167,6 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
                     >
                       {post.mediaItems.map((item) => {
                         if (item.type === 'image') {
-                          // 普通图片
                           return (
                             <img
                               src={item.src}
@@ -189,12 +177,9 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
                             />
                           );
                         } else {
-                          // LivePhoto
                           if (post.mediaItems.length === 1) {
-                            // 单图：直接使用原始容器（保持原比例）
                             return <div set:html={item.html} style="width: 100%;" />;
                           } else {
-                            // 多图：使用正方形容器（padding-top:100%）
                             const squareHtml = buildSquareLivePhoto(item.src!, item.videoSrc);
                             return <div set:html={squareHtml} style="width: 100%; height: 100%;" />;
                           }
@@ -282,14 +267,436 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
     </div>
   </div>
 
-<!-- 引入播放器脚本（CDN） -->
-<script is:inline src="/js/mood-player.min.js"></script>
+  <!-- ==================== 全局吸附播放器 ==================== -->
+  <header class="global-bar" id="globalBar" hidden>
+    <div class="global-host" id="globalHost"></div>
+  </header>
 
-<!-- 创建播放器 -->
-<!--<center><mood-player
-  size="large"
-  api="https://api.qijieya.cn/meting/?type=playlist&id=18003781576"
-></mood-player></center>-->
+  <div class="gesture-hint" id="gestureHint">下滑关闭</div>
+
+  <!-- 播放器库：只加载一次 -->
+  <script is:inline src="/js/mood-player.min.js"></script>
+
+  <!-- 搬迁逻辑 -->
+  <script is:inline>
+    (function () {
+      'use strict';
+
+      var HOST_ID = 'globalHost';
+      var BAR_ID  = 'globalBar';
+      var HINT_ID = 'gestureHint';
+      var DEBUG   = false;
+
+      var movedMap = new Map();   // mood-player → 占位块
+      var gesture = null;
+      var hintEl = null;
+
+      function $(id) { return document.getElementById(id); }
+
+      function log(msg, type) {
+        if (!DEBUG) return;
+        if (type === 'warn') console.warn('[mood-global]', msg);
+        else console.log('[mood-global]', msg);
+      }
+
+      /* ============ 动画 ============ */
+
+      function fadeInElement(el, duration) {
+        return new Promise(function (resolve) {
+          var anim = el.animate(
+            [
+              { opacity: 0, filter: 'blur(14px)' },
+              { opacity: 1, filter: 'blur(0px)' }
+            ],
+            { duration: duration, easing: 'cubic-bezier(.32,.72,0,1)', fill: 'forwards' }
+          );
+          anim.onfinish = function () {
+            try { anim.cancel(); } catch (_) {}
+            resolve();
+          };
+          anim.oncancel = function () { resolve(); };
+        });
+      }
+
+      function slideInHost(el, duration) {
+        return new Promise(function (resolve) {
+          var anim = el.animate(
+            [
+              { transform: 'translateY(140%)', opacity: 0, filter: 'blur(14px)' },
+              { opacity: 1, offset: 0.6 },
+              { transform: 'translateY(0)', opacity: 1, filter: 'blur(0px)' }
+            ],
+            { duration: duration, easing: 'cubic-bezier(.32,.72,0,1)', fill: 'forwards' }
+          );
+          anim.onfinish = function () {
+            try { anim.cancel(); } catch (_) {}
+            resolve();
+          };
+          anim.oncancel = function () { resolve(); };
+        });
+      }
+
+      function slideOutHost(el, duration, fromOffset) {
+        var startY = fromOffset || 0;
+        var targetY = window.innerHeight + 80;
+        if (targetY <= startY + 40) targetY = startY + 300;
+
+        return new Promise(function (resolve) {
+          var anim = el.animate(
+            [
+              { transform: 'translateY(' + startY + 'px)' },
+              { transform: 'translateY(' + targetY + 'px)' }
+            ],
+            { duration: duration, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }
+          );
+          anim.onfinish = function () { resolve(); };
+          anim.oncancel = function () { resolve(); };
+        });
+      }
+
+      function resetHostVisual(host) {
+        host.getAnimations().forEach(function (a) {
+          try { a.cancel(); } catch (_) {}
+        });
+        host.style.opacity = '';
+        host.style.filter = '';
+        host.style.transform = '';
+      }
+
+      /* ============ 幽灵 / 占位 ============ */
+
+      function makeGhost(el) {
+        var rect = el.getBoundingClientRect();
+        var ghost = document.createElement('div');
+        ghost.style.cssText =
+          'position:fixed;' +
+          'left:' + rect.left + 'px;' +
+          'top:' + rect.top + 'px;' +
+          'width:' + rect.width + 'px;' +
+          'height:' + rect.height + 'px;' +
+          'pointer-events:none;' +
+          'z-index:2000;' +
+          'overflow:hidden;';
+
+        try {
+          if (el.shadowRoot) {
+            var shadow = ghost.attachShadow({ mode: 'open' });
+            shadow.innerHTML = el.shadowRoot.innerHTML;
+          }
+        } catch (_) {}
+
+        document.body.appendChild(ghost);
+        ghost.animate(
+          [
+            { opacity: 1, filter: 'blur(0px)', transform: 'scale(1)' },
+            { opacity: 0, filter: 'blur(14px)', transform: 'scale(.96)' }
+          ],
+          { duration: 340, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }
+        ).onfinish = function () { ghost.remove(); };
+      }
+
+      function createPlaceholder(width, height) {
+        var ph = document.createElement('div');
+        ph.className = 'player-placeholder';
+        ph.style.width = width + 'px';
+        ph.style.maxWidth = '100%';
+        ph.style.height = Math.max(48, height) + 'px';
+        ph.innerHTML = '<span class="ph-text">🎵 正在悬浮播放</span>';
+        return ph;
+      }
+
+      /* ============ 搬迁 ============ */
+
+      function findPlayer(e) {
+        var path = e.composedPath ? e.composedPath() : [];
+        for (var i = 0; i < path.length; i++) {
+          var n = path[i];
+          if (n && n.nodeType === 1 && n.tagName &&
+              n.tagName.toLowerCase() === 'mood-player') {
+            return n;
+          }
+        }
+        return null;
+      }
+
+      function moveToGlobal(el) {
+        if (!el || el.closest('#' + HOST_ID)) return;
+
+        var host = $(HOST_ID);
+        var bar  = $(BAR_ID);
+        if (!host || !bar) return;
+
+        var existing = host.querySelector('mood-player');
+        if (existing && existing !== el) {
+          returnExisting(existing, { animate: false });
+        }
+
+        var beforePaused = el._player ? el._player.audio.paused : null;
+        var beforeTime   = el._player ? el._player.audio.currentTime : null;
+
+        /* ★ 顺序关键：测量 → 置 null → DOM 操作 → 恢复 */
+        var rect = el.getBoundingClientRect();
+        var saved = el._player;
+        el._player = null;
+
+        makeGhost(el);
+        var ph = createPlaceholder(rect.width, rect.height);
+        el.parentNode.replaceChild(ph, el);
+        movedMap.set(el, ph);
+
+        resetHostVisual(host);
+        host.appendChild(el);
+        el._player = saved;
+
+        /* 底部吸附：抽屉向上展开 */
+        try {
+          var clip = el.shadowRoot && el.shadowRoot.querySelector('.mcp-drawer-clip');
+          if (clip) clip.setAttribute('data-pos', 'top');
+        } catch (_) {}
+
+        bar.hidden = false;
+        slideInHost(host, 800);
+
+        attachDrawerListener(el, bar);
+
+        if (DEBUG && beforePaused != null && el._player) {
+          var afterPaused = el._player.audio.paused;
+          var afterTime   = el._player.audio.currentTime;
+          log('搬迁 ' + (el.id || 'player') +
+              ' · ' + (beforePaused ? '暂停' : '播放') + ' → ' + (afterPaused ? '暂停' : '播放') +
+              ' · ' + beforeTime.toFixed(2) + 's → ' + afterTime.toFixed(2) + 's',
+              beforePaused === afterPaused ? 'ok' : 'warn');
+        }
+      }
+
+      function attachDrawerListener(el, bar) {
+        if (el._drawerListenerAttached) return;
+        el._drawerListenerAttached = true;
+        el.addEventListener('mood:playlisttoggle', function (e) {
+          if (e.detail && e.detail.open) bar.classList.add('drawer-open');
+          else bar.classList.remove('drawer-open');
+        });
+      }
+
+      /* ============ 归还 ============ */
+
+      function returnExisting(el, opts) {
+        opts = opts || {};
+        var animate = opts.animate !== false;
+        var fromOffset = opts.fromOffset || 0;
+        var host = $(HOST_ID);
+        var bar  = $(BAR_ID);
+        if (!el || !host) return;
+
+        /* 归还 = 停止播放 */
+        if (el._player && !el._player.audio.paused) {
+          try { el._player.pause(true); } catch (_) {}
+        }
+
+        var ph = movedMap.get(el);
+        if (!ph) {
+          try { el.destroy(); } catch (_) {}
+          el.remove();
+          if (!host.querySelector('mood-player')) {
+            bar.hidden = true;
+            resetHostVisual(host);
+          }
+          return;
+        }
+
+        function doMoveBack() {
+          if (!movedMap.has(el)) return;
+          var p = movedMap.get(el);
+
+          var saved = el._player;
+          el._player = null;
+          if (p && p.parentNode) p.parentNode.replaceChild(el, p);
+          el._player = saved;
+
+          movedMap.delete(el);
+
+          try {
+            var clip = el.shadowRoot && el.shadowRoot.querySelector('.mcp-drawer-clip');
+            if (clip) clip.setAttribute('data-pos', 'bottom');
+          } catch (_) {}
+
+          if (!host.querySelector('mood-player')) {
+            bar.hidden = true;
+            bar.classList.remove('drawer-open');
+            resetHostVisual(host);
+          }
+        }
+
+        if (!animate) {
+          doMoveBack();
+          log('归还 ' + (el.id || 'player') + '（无动画）');
+          return;
+        }
+
+        slideOutHost(host, 460, fromOffset).then(function () {
+          doMoveBack();
+          return fadeInElement(el, 860);
+        }).then(function () {
+          log('归还 ' + (el.id || 'player') + ' 完成');
+        });
+      }
+
+      /* ============ 下滑手势 ============ */
+
+      function showHint(startRect) {
+        if (!hintEl) hintEl = $(HINT_ID);
+        if (!hintEl) return;
+        hintEl.style.left = (startRect.left + startRect.width / 2) + 'px';
+        hintEl.style.top  = (startRect.top - 32) + 'px';
+        hintEl.classList.add('visible');
+      }
+
+      function hideHint() {
+        if (!hintEl) hintEl = $(HINT_ID);
+        if (hintEl) hintEl.classList.remove('visible');
+      }
+
+      document.addEventListener('pointerdown', function (e) {
+        if (e.button !== undefined && e.button !== 0) return;
+
+        var host = $(HOST_ID);
+        var bar  = $(BAR_ID);
+        if (!host || !bar || bar.hidden) return;
+        if (!host.contains(e.target)) return;
+
+        var path = e.composedPath ? e.composedPath() : [];
+        for (var i = 0; i < path.length; i++) {
+          var n = path[i];
+          if (!n || n.nodeType !== 1) continue;
+          if (n.matches && n.matches(
+            '.mcp-btn, .mcp-side-btn, .mcp-cover-play, .mcp-pl-item, .mcp-drawer-inner, .mcp-progress'
+          )) return;
+        }
+
+        var playerEl = host.querySelector('mood-player');
+        if (!playerEl) return;
+
+        host.getAnimations().forEach(function (a) {
+          try { a.cancel(); } catch (_) {}
+        });
+        host.style.transform = '';
+        host.style.opacity = '';
+
+        gesture = {
+          startX: e.clientX,
+          startY: e.clientY,
+          pointerId: e.pointerId,
+          startTime: performance.now(),
+          hostRect: host.getBoundingClientRect(),
+          locked: false,
+          active: false,
+          player: playerEl
+        };
+
+        try { host.setPointerCapture(e.pointerId); } catch (_) {}
+      }, { passive: true });
+
+      document.addEventListener('pointermove', function (e) {
+        if (!gesture || e.pointerId !== gesture.pointerId) return;
+        var host = $(HOST_ID);
+        if (!host) return;
+
+        var dx = e.clientX - gesture.startX;
+        var dy = e.clientY - gesture.startY;
+
+        if (!gesture.locked) {
+          if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8) {
+            gesture = null;
+            hideHint();
+            return;
+          }
+          if (dy > 6) {
+            gesture.locked = true;
+            gesture.active = true;
+            showHint(gesture.hostRect);
+          } else if (dy < -6) {
+            gesture = null;
+            return;
+          }
+        }
+
+        if (gesture.active) {
+          if (e.cancelable) e.preventDefault();
+          var offset = Math.max(0, dy);
+          host.style.transform = 'translateY(' + offset + 'px)';
+          var maxDist = Math.max(80, gesture.hostRect.height * 1.5);
+          host.style.opacity = String(Math.max(0.45, 1 - offset / maxDist));
+        }
+      }, { passive: false });
+
+      document.addEventListener('pointerup', function (e) {
+        if (!gesture || e.pointerId !== gesture.pointerId) return;
+        var g = gesture;
+        gesture = null;
+        hideHint();
+
+        var host = $(HOST_ID);
+        if (!host) return;
+
+        if (!g.active) {
+          host.style.transform = '';
+          host.style.opacity = '';
+          return;
+        }
+
+        var dy = e.clientY - g.startY;
+        var dt = Math.max(1, performance.now() - g.startTime);
+        var velocity = dy / dt;
+        var threshold = g.hostRect.height * 0.4;
+
+        var m = (host.style.transform || '').match(/translateY\(([\d.-]+)px\)/);
+        var fromOffset = m ? parseFloat(m[1]) : 0;
+        host.style.transform = '';
+        host.style.opacity = '';
+
+        var shouldReturn = dy > threshold || (velocity > 0.6 && dy > 30);
+
+        if (shouldReturn && g.player) {
+          returnExisting(g.player, { animate: true, fromOffset: fromOffset });
+        } else {
+          host.animate(
+            [
+              { transform: 'translateY(' + fromOffset + 'px)' },
+              { transform: 'translateY(0)' }
+            ],
+            { duration: 420, easing: 'cubic-bezier(.32,.72,0,1)', fill: 'forwards' }
+          ).onfinish = function () {
+            host.style.transform = '';
+            host.style.opacity = '';
+            var anims = host.getAnimations();
+            var last = anims[anims.length - 1];
+            if (last) { try { last.cancel(); } catch (_) {} }
+          };
+        }
+      }, { passive: true });
+
+      document.addEventListener('pointercancel', function () {
+        if (!gesture) return;
+        gesture = null;
+        hideHint();
+        var host = $(HOST_ID);
+        if (!host) return;
+        host.style.transform = '';
+        host.style.opacity = '';
+      });
+
+      /* ============ 播放触发搬迁 ============ */
+
+      document.addEventListener('mood:play', function (e) {
+        var el = findPlayer(e);
+        if (!el) return;
+        if (el.closest('#' + HOST_ID)) return;
+        moveToGlobal(el);
+      });
+
+      log('搬迁逻辑就绪');
+    })();
+  </script>
 
   <footer id="footer" role="contentinfo">
     &copy; {new Date().getFullYear()} <a href={urls.siteUrl}>{options.title}</a>.
@@ -298,6 +705,7 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
 </Base>
 
 <style>
+/* ---------- 原有样式 ---------- */
 .post-excerpt :global(mood-player) {
   position: relative;
   z-index: 3;
@@ -313,40 +721,21 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
   z-index: 3;
 }
 
-/* 单图：普通图片自适应 */
-.post-images[data-count="1"] {
-  grid-template-columns: 1fr;
-}
-.post-images[data-count="1"] img {
-  max-height: 300px;
-  width: auto;
-  margin: 0 auto;
-}
-/* 单图 LivePhoto：容器自适应 */
-.post-images[data-count="1"] .live-photo {
-  width: 100%;
-  height: auto;
-}
+.post-images[data-count="1"] { grid-template-columns: 1fr; }
+.post-images[data-count="1"] img { max-height: 300px; width: auto; margin: 0 auto; }
+.post-images[data-count="1"] .live-photo { width: 100%; height: auto; }
 
-/* 多图正方形网格 */
-.post-images[data-count="2"] {
-  grid-template-columns: 1fr 1fr;
-}
+.post-images[data-count="2"] { grid-template-columns: 1fr 1fr; }
 .post-images[data-count="2"] img,
 .post-images[data-count="2"] .live-photo {
-  aspect-ratio: 1 / 1;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  aspect-ratio: 1 / 1; width: 100%; height: 100%; object-fit: cover;
 }
 .post-images[data-count="3"],
 .post-images[data-count="5"],
 .post-images[data-count="6"],
 .post-images[data-count="7"],
 .post-images[data-count="8"],
-.post-images[data-count="9"] {
-  grid-template-columns: repeat(3, 1fr);
-}
+.post-images[data-count="9"] { grid-template-columns: repeat(3, 1fr); }
 .post-images[data-count="3"] img,
 .post-images[data-count="3"] .live-photo,
 .post-images[data-count="5"] img,
@@ -359,22 +748,102 @@ function buildSquareLivePhoto(src: string, videoSrc?: string): string {
 .post-images[data-count="8"] .live-photo,
 .post-images[data-count="9"] img,
 .post-images[data-count="9"] .live-photo {
-  aspect-ratio: 1 / 1;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  aspect-ratio: 1 / 1; width: 100%; height: 100%; object-fit: cover;
 }
-.post-images[data-count="4"] {
-  grid-template-columns: 1fr 1fr;
-}
+.post-images[data-count="4"] { grid-template-columns: 1fr 1fr; }
 .post-images[data-count="4"] img,
 .post-images[data-count="4"] .live-photo {
-  aspect-ratio: 1 / 1;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  aspect-ratio: 1 / 1; width: 100%; height: 100%; object-fit: cover;
 }
 
+/* ---------- 全局吸附播放器 ---------- */
+.global-bar {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  touch-action: pan-x;
+}
+.global-bar[hidden] { display: none; }
+.global-bar.drawer-open { touch-action: auto; }
+
+.global-host {
+  pointer-events: auto;
+  width: 100%;
+  box-shadow: 0 12px 32px rgba(15,17,26,.18);
+  will-change: transform;
+}
+.global-host mood-player {
+  width: 100%;
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .global-bar {
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+@media (min-width: 769px) {
+  .global-bar {
+    right: 24px;
+    bottom: 24px;
+    width: 400px;
+    max-width: calc(100vw - 48px);
+  }
+}
+
+/* 手势提示 */
+.gesture-hint {
+  position: fixed;
+  z-index: 2001;
+  padding: 4px 12px;
+  background: rgba(20,22,31,.55);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity .2s, transform .2s;
+  white-space: nowrap;
+}
+.gesture-hint.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* 文章内占位块（JS 动态创建，需 :global） */
+:global(.player-placeholder) {
+  border-radius: 10px;
+  background: linear-gradient(135deg,
+    rgba(122,162,255,.10),
+    rgba(201,140,255,.10));
+  border: 1px dashed rgba(90,108,255,.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: rgba(15,17,26,.55);
+  user-select: none;
+  opacity: 0;
+  filter: blur(8px);
+  animation: ph-in 1280ms cubic-bezier(.32,.72,0,1) 60ms forwards;
+}
+:global(.player-placeholder .ph-text) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+@keyframes ph-in {
+  to { opacity: 1; filter: blur(0); }
+}
+
+/* ---------- 移动端 ---------- */
 @media (max-width: 768px) {
   .post-images {
     max-width: 100% !important;
