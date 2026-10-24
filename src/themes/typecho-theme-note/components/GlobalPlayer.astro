@@ -1,6 +1,6 @@
 ---
 /**
- * 全局吸附播放器Mood Player
+ * 全局吸附播放器 Mood Player
  */
 ---
 
@@ -14,7 +14,6 @@
   (function () {
     'use strict';
 
-    /* 防止 Swup / View Transitions 重复执行 */
     if (window.__moodGlobalInit) return;
     window.__moodGlobalInit = true;
 
@@ -123,9 +122,9 @@
     function createPlaceholder(width, height) {
       var ph = document.createElement('div');
       ph.className = 'player-placeholder';
-      ph.style.width = width + 'px';
+      ph.style.width = (width || 200) + 'px';
       ph.style.maxWidth = '100%';
-      ph.style.height = Math.max(48, height) + 'px';
+      ph.style.height = Math.max(48, height || 64) + 'px';
       ph.innerHTML = '<span class="ph-text">🎵 正在悬浮播放</span>';
       return ph;
     }
@@ -218,13 +217,18 @@
       }
 
       var ph = movedMap.get(el);
-      if (!ph) {
+
+      /* 占位已不存在（页面已切换 / 无返回位置）→ 直接销毁 */
+      if (!ph || !ph.parentNode) {
         try { el.destroy(); } catch (_) {}
         el.remove();
+        movedMap.delete(el);
         if (!host.querySelector('mood-player')) {
           bar.hidden = true;
+          bar.classList.remove('drawer-open');
           resetHostVisual(host);
         }
+        log('归还 ' + (el.id || 'player') + '（占位不存在，已销毁）');
         return;
       }
 
@@ -233,8 +237,15 @@
         var p = movedMap.get(el);
         var saved = el._player;
         el._player = null;
-        if (p && p.parentNode) p.parentNode.replaceChild(el, p);
-        el._player = saved;
+        if (p && p.parentNode) {
+          p.parentNode.replaceChild(el, p);
+          el._player = saved;
+        } else {
+          /* 执行期间占位被替换/移除，直接销毁 */
+          el._player = saved;
+          try { el.destroy(); } catch (_) {}
+          el.remove();
+        }
         movedMap.delete(el);
         try {
           var clip = el.shadowRoot && el.shadowRoot.querySelector('.mcp-drawer-clip');
@@ -400,6 +411,69 @@
       if (el.closest('#' + HOST_ID)) return;
       moveToGlobal(el);
     });
+
+    /* ============ 切页去重：同 api 的文章内播放器替换为占位 ============ */
+
+    /*
+     * 场景：首页播放器 A（api=X）已吸附到全局条，切到文章页，
+     * 文章里也有 <mood-player api=X>，此时页面会有两个同歌单播放器。
+     * 处理：销毁文章里的，替换成占位，并把 A 的占位指针更新到新页面的位置。
+     * 这样下滑归还时 A 会回到新页面文章里的位置，而不是旧页面。
+     */
+    function dedupeContentPlayers() {
+      var host = $(HOST_ID);
+      if (!host) return;
+      var gp = host.querySelector('mood-player');
+      if (!gp) return;
+      var api = gp.getAttribute('api');
+      if (!api) return;
+
+      var replaced = false;
+
+      document.querySelectorAll('mood-player').forEach(function (el) {
+        if (el.closest('#' + HOST_ID)) return;
+        if (el.getAttribute('api') !== api) return;
+
+        var rect = el.getBoundingClientRect();
+        try { el.destroy(); } catch (_) {}
+
+        var ph = createPlaceholder(rect.width, rect.height);
+        el.parentNode.replaceChild(ph, el);
+
+        /* 更新 gp 的占位指针，指向新页面里的位置 */
+        var oldPh = movedMap.get(gp);
+        if (oldPh && oldPh !== ph) movedMap.delete(gp);
+        movedMap.set(gp, ph);
+
+        replaced = true;
+      });
+
+      if (replaced && DEBUG) {
+        log('切页去重：已把 ' + api + ' 的文章内播放器替换为占位');
+      }
+    }
+
+    /* 绑定 Swup / View Transitions 的切页完成事件，等 DOM 稳定后再去重 */
+    function bindPageView() {
+      var handler = function () { setTimeout(dedupeContentPlayers, 60); };
+
+      if (window.swup && window.swup.hooks) {
+        window.swup.hooks.on('page:view', handler);
+      }
+      document.addEventListener('page:view', handler);
+      document.addEventListener('swup:page:view', handler);
+      document.addEventListener('astro:page-load', handler);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindPageView);
+    } else {
+      bindPageView();
+    }
+
+    /* 首次进入时也跑一次（防止直接刷新在文章页、首页已吸附的状态） */
+    bindPageView();
+    setTimeout(dedupeContentPlayers, 100);
 
     log('全局播放器就绪');
   })();
