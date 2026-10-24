@@ -9,6 +9,7 @@ import Base from '@/layouts/Base.astro';
 import CommentList from './CommentList.astro';
 import type { ThemePostProps } from '@/lib/theme-props';
 import { formatDate, buildAuthorLink } from '@/lib/content';
+import GlobalPlayer from './components/GlobalPlayer.astro';
 
 type Props = ThemePostProps;
 
@@ -307,11 +308,23 @@ const totalComments = commentPagination.totalComments;
     </div>
   </div>
 
-<!-- 引入播放器脚本（CDN） -->
-<script is:inline src="/js/mood-player.min.js"></script>
+  <!-- 引入播放器脚本（先加载，确保 customElements 就绪） -->
+  <script is:inline src="/js/mood-player.min.js"></script>
+
+  <!-- 全局吸附播放器：搬迁逻辑 + 吸附条，位于 #body 之外，切页不被 Swup 替换 -->
+  <GlobalPlayer />
 
   <footer id="footer" role="contentinfo">
     &copy; {new Date().getFullYear()} <a href={urls.siteUrl}>{options.title}</a>.
     一起来堆雪人！
   </footer>
 </Base>
+
+<style>
+/* 让文章正文里的播放器浮在内容层之上，避免点击被内容区拦截 */
+.post-content :global(mood-player) {
+  position: relative;
+  z-index: 3;
+  display: block;
+}
+</style>
