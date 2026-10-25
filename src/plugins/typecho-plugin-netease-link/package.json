@@ -18,7 +18,7 @@
         "apiBase": {
           "type": "text",
           "label": "基础 API 链接",
-          "default": "https://api.qijieya.cn/meting",
+          "default": "https://api.qijieya.cn/meting/",
           "description": "mood-player 的接口基础地址，例如：https://api.qijieya.cn/meting/"
         },
         "pathType": {
