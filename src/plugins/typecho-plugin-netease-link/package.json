@@ -9,17 +9,17 @@
     "plugin": {
       "id": "typecho-plugin-netease-moodplayer",
       "name": "网易云音乐 mood-player",
-      "description": "自动将网易云歌曲 / 歌单分享链接转换为 mood-player 标签，并在后台编辑器提供插入按钮",
+      "description": "自动将网易云歌曲 / 歌单分享链接转换为 mood-player 标签",
       "author": "Link",
-      "authorUrl": "https://atlinker.cn",
-      "homepage": "https://github.com/link9596/typecho-plugin-netease-moodplayer",
+      "authorUrl": "https://lkin.cn",
+      "homepage": "https://github.com/link9596/moodplayer",
       "version": "1.0.0",
       "config": {
         "apiBase": {
           "type": "text",
           "label": "基础 API 链接",
           "default": "https://api.qijieya.cn/meting",
-          "description": "mood-player 的接口基础地址，例如：https://api.qijieya.cn/meting"
+          "description": "mood-player 的接口基础地址，例如：https://api.qijieya.cn/meting/"
         },
         "pathType": {
           "type": "text",
