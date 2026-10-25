@@ -38,6 +38,9 @@ importers:
       typecho-plugin-livephoto:
         specifier: file:src/plugins/typecho-plugin-livephoto
         version: file:src/plugins/typecho-plugin-livephoto
+      typecho-plugin-netease-link:
+        specifier: file:src/plugins/typecho-plugin-netease-link
+        version: file:src/plugins/typecho-plugin-netease-link
       typecho-plugin-scribe:
         specifier: file:src/plugins/typecho-plugin-scribe
         version: file:src/plugins/typecho-plugin-scribe
@@ -4950,6 +4953,9 @@ packages:
 
   typecho-plugin-livephoto@file:src/plugins/typecho-plugin-livephoto:
     resolution: {directory: src/plugins/typecho-plugin-livephoto, type: directory}
+
+  typecho-plugin-netease-link@file:src/plugins/typecho-plugin-netease-link:
+    resolution: {directory: src/plugins/typecho-plugin-netease-link, type: directory}
 
   typecho-plugin-scribe@file:src/plugins/typecho-plugin-scribe:
     resolution: {directory: src/plugins/typecho-plugin-scribe, type: directory}
@@ -10339,6 +10345,8 @@ snapshots:
   typecho-plugin-antispam@file:src/plugins/typecho-plugin-antispam: {}
 
   typecho-plugin-livephoto@file:src/plugins/typecho-plugin-livephoto: {}
+
+  typecho-plugin-netease-link@file:src/plugins/typecho-plugin-netease-link: {}
 
   typecho-plugin-scribe@file:src/plugins/typecho-plugin-scribe: {}
 
