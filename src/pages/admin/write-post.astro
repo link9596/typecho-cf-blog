@@ -186,6 +186,7 @@ const writePostBottomHtml = await applyFilterSafely(ctx, 'admin:writePost:bottom
                   <option value="password" selected={post?.password && post.password.length > 0}>密码保护</option>
                   <option value="private" selected={post?.status === 'private'}>私密</option>
                   <option value="waiting" selected={post?.status === 'waiting'}>待审核</option>
+                  <option value="logged" selected={post?.status === 'logged'}>仅登录可见</option>
                 </select>
               </p>
               <p id="post-password" class:list={[{ hidden: !post?.password || post.password.length === 0 }]}>
