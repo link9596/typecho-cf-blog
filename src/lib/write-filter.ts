@@ -8,7 +8,7 @@ export class WriteFilterError extends Error {
 }
 
 const COMMENT_STATUSES = new Set(['approved', 'waiting', 'spam']);
-const CONTENT_STATUSES = new Set(['publish', 'draft', 'hidden', 'private', 'waiting']);
+const CONTENT_STATUSES = new Set(['publish', 'draft', 'hidden', 'private', 'waiting', 'logged']);
 const BINARY_FLAGS = new Set(['0', '1']);
 
 function record(value: unknown): Record<string, unknown> {
