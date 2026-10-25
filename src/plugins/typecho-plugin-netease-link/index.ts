@@ -3,12 +3,13 @@ import { loadPluginConfig } from 'typecho/plugin-sdk';
 
 const NETEASE_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24">' +
-  '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ' +
+  '<path fill="none" stroke="#999" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ' +
   'd="M9 4c-2.93 1.346-5 5.046-5 8.492C4 17 8 20 12 20s8-3 8-7c0-3.513-3.5-5.513-6-5.513S9 9 9 12c0 2 1.5 3 3 3s3-1 3-3c0-3.513-2-4.508-2-6.515c0-3.504 3.5-2.603 4-1.502"></path>' +
   '</svg>';
 
 export default function init({ addHook, pluginId }: PluginInitContext): void {
-  // ========== 前台注入：自动转换网易云链接 ====
+
+  // ===== 前台注入：自动转换网易云链接=====
   addHook(
     'archive:footer',
     pluginId,
@@ -153,7 +154,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     }
   );
 
-  // ========== 后台编辑器注入：按钮 + 对话框 =====
+  // ====== 后台编辑器注入：按钮 + 对话框 =====
   const buildEditorUI = (config: Record<string, unknown>): string => {
     const apiBase = String(config.apiBase || 'https://api.qijieya.cn/meting');
     const pathType = String(config.pathType || '?type=');
@@ -295,20 +296,17 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     if (!row) return false;
     if (document.getElementById('wmd-netease-button')) return true;
 
-    var spacer = document.createElement('li');
-    spacer.className = 'wmd-spacer';
-    row.appendChild(spacer);
-
     var item = document.createElement('li');
     item.id = 'wmd-netease-button';
     item.className = 'wmd-button';
     item.title = '插入网易云音乐';
     item.setAttribute('aria-label', '插入网易云音乐');
     item.style.cursor = 'pointer';
-    item.style.padding = '4px 4px 0px 4px';
+    item.style.padding = '4px 1px 0px 1px';
     item.style.display = 'inline';
     item.style.alignItems = 'center';
     item.style.justifyContent = 'center';
+    item.style.color = '#999';
     item.innerHTML = svgIcon;
     item.addEventListener('click', openDialog);
 
@@ -334,6 +332,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
           fb.style.display = 'inline-flex';
           fb.style.alignItems = 'center';
           fb.style.gap = '4px';
+          fb.style.color = '#999';
           fb.innerHTML = svgIcon + ' 网易云';
           fb.title = '插入网易云音乐';
           fb.addEventListener('click', openDialog);
