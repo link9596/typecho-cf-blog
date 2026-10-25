@@ -27,7 +27,7 @@ export function publishedPostCondition(now = nowSeconds()) {
 /**
  * List condition for posts that respects viewer permissions.
  * - Unauthenticated: only 'publish'
- * - Authenticated: own 'private' + all 'publish'
+ * - Authenticated: 'publish' + all 'logged' + own 'private'
  *   （隐藏 'hidden' 文章不在列表中显示）
  */
 export function listPostCondition(viewer: ContentViewer, now = nowSeconds()) {
@@ -40,6 +40,7 @@ export function listPostCondition(viewer: ContentViewer, now = nowSeconds()) {
       baseDate,
       or(
         eq(schema.contents.status, 'publish'),
+        eq(schema.contents.status, 'logged'),
         and(
           eq(schema.contents.status, 'private'),
           eq(schema.contents.authorId, viewer.uid)
@@ -51,7 +52,6 @@ export function listPostCondition(viewer: ContentViewer, now = nowSeconds()) {
   }
 }
 
-/** Public detail visibility, with author-only access for drafts/private/future content. */
 export function canViewContent(
   content: VisibleContent,
   viewer: ContentViewer,
@@ -60,9 +60,15 @@ export function canViewContent(
   const isAuthor = !!viewer.isLoggedIn && !!viewer.uid && viewer.uid === content.authorId;
   const isDraft = content.type?.endsWith('_draft');
   const isPrivate = content.status === 'private';
+  const isLogged = content.status === 'logged';
   const isPublished = content.status === 'publish' || content.status === 'hidden';
   const isFuture = (content.created ?? 0) > now;
 
   if (isDraft || isPrivate || (isPublished && isFuture)) return isAuthor;
+  if (isLogged) {
+    if (isFuture) return isAuthor;
+    return !!viewer.isLoggedIn;
+  }
+
   return isPublished;
 }
