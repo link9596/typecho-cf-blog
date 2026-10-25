@@ -21,6 +21,7 @@ const VISIBILITY_TO_STATUS: Record<string, string> = {
   password: 'publish',
   private: 'private',
   waiting: 'waiting',
+  logged: 'logged',
 };
 
 /**
