@@ -156,7 +156,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
 
   // ====== 后台编辑器注入：按钮 + 对话框 =====
   const buildEditorUI = (config: Record<string, unknown>): string => {
-    const apiBase = String(config.apiBase || 'https://api.qijieya.cn/meting');
+    const apiBase = String(config.apiBase || 'https://api.qijieya.cn/meting/');
     const pathType = String(config.pathType || '?type=');
     const pathId = String(config.pathId || '&id=');
     const playerSize = String(config.playerSize || 'small');
