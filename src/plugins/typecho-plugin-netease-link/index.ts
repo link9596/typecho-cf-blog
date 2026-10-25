@@ -218,7 +218,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
         return;
       }
       currentInfo = info;
-      preview.textContent = '已识别：' + (info.type === 'song' ? '单曲' : '歌单') +
+      preview.textContent = '✅已识别：' + (info.type === 'song' ? '单曲' : '歌单') +
         ' ID = ' + info.id + '   ->   ' + buildTag(info.type, info.id);
     }
 
