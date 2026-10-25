@@ -74,12 +74,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return new Response('文章不存在', { status: 404 });
   }
 
-  const isPublicContent =
-    (content.type === 'post' || content.type === 'page') &&
-    (content.status === 'publish' || content.status === 'hidden');
-  if (!isPublicContent) {
-    return new Response('评论目标不可用', { status: 403 });
-  }
+  const isPostLikeContent =
+  (content.type === 'post' || content.type === 'page');
+const isPublicContent =
+  isPostLikeContent &&
+  (content.status === 'publish' || content.status === 'hidden');
+const isLoggedContent =
+  isPostLikeContent && content.status === 'logged';
+
+if (!isPublicContent && !isLoggedContent) {
+  return new Response('评论目标不可用', { status: 403 });
+}
+// logged 状态文章：只允许已登录用户评论
+if (isLoggedContent && !authResult) {
+  return new Response('评论目标不可用', { status: 403 });
+}
+
 
   if (content.allowComment !== '1') {
     return new Response('评论已关闭', { status: 403 });
