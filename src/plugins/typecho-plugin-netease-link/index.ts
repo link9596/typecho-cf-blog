@@ -9,7 +9,7 @@ const NETEASE_ICON =
 
 export default function init({ addHook, pluginId }: PluginInitContext): void {
 
-  // ===== 前台注入：自动转换网易云链接=====
+  // ===== 前台注入：自动转换网易云链接 =====
   addHook(
     'archive:footer',
     pluginId,
@@ -165,7 +165,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
 <div id="netease-dialog" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10000; background:#fff; border:1px solid #ccc; border-radius:6px; box-shadow:0 4px 20px rgba(0,0,0,0.18); padding:20px; width:520px; max-width:92vw; box-sizing:border-box;">
   <p style="margin:0 0 12px; font-weight:600; font-size:14px;">插入网易云音乐</p>
   <p style="margin:0 0 6px; font-size:13px; color:#555;">粘贴分享文本或链接：</p>
-  <textarea id="ne-dialog-input" style="width:100%; height:90px; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box; font-family:inherit; font-size:13px; resize:vertical; outline:none;" placeholder="例如：分享陈绮贞的单曲《天天想你》: https://y.music.163.com/m/song?id=26348068&userid=..."></textarea>
+  <textarea id="ne-dialog-input" style="width:100%; height:90px; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box; font-family:inherit; font-size:13px; resize:vertical; outline:none;" placeholder="例如：分享孙燕姿的单曲《遇见》: https://y.music.163.com/m/song?id=454828887&userid=..."></textarea>
   <div id="ne-dialog-preview" style="margin:10px 0; padding:8px 10px; background:#f6f8fa; border-radius:4px; font-size:12px; color:#555; min-height:18px; word-break:break-all;"></div>
   <div style="text-align:right;">
     <button type="button" class="btn btn-s primary" id="ne-dialog-ok">插入</button>
