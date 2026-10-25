@@ -16,7 +16,7 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     (html: string, extra?: { options?: Record<string, unknown> }) => {
       const config = loadPluginConfig(extra?.options ?? {}, pluginId);
 
-      const apiBase = String(config.apiBase || 'https://api.qijieya.cn/meting');
+      const apiBase = String(config.apiBase || 'https://api.qijieya.cn/meting/');
       const pathType = String(config.pathType || '?type=');
       const pathId = String(config.pathId || '&id=');
       const playerSize = String(config.playerSize || 'small');
