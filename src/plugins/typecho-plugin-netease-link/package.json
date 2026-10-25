@@ -1,0 +1,45 @@
+{
+  "name": "typecho-plugin-netease-moodplayer",
+  "version": "1.0.0",
+  "description": "网易云音乐分享链接转 mood-player 插件",
+  "keywords": ["typecho", "plugin", "netease", "music", "mood-player"],
+  "type": "module",
+  "main": "index.ts",
+  "typecho": {
+    "plugin": {
+      "id": "typecho-plugin-netease-moodplayer",
+      "name": "网易云音乐 mood-player",
+      "description": "自动将网易云歌曲 / 歌单分享链接转换为 mood-player 标签，并在后台编辑器提供插入按钮",
+      "author": "Link",
+      "authorUrl": "https://atlinker.cn",
+      "homepage": "https://github.com/link9596/typecho-plugin-netease-moodplayer",
+      "version": "1.0.0",
+      "config": {
+        "apiBase": {
+          "type": "text",
+          "label": "基础 API 链接",
+          "default": "https://api.qijieya.cn/meting",
+          "description": "mood-player 的接口基础地址，例如：https://api.qijieya.cn/meting"
+        },
+        "pathType": {
+          "type": "text",
+          "label": "类型参数拼接",
+          "default": "?type=",
+          "description": "拼接在基础链接后、类型值前，最终形如：基础链接 + 本值 + song/playlist"
+        },
+        "pathId": {
+          "type": "text",
+          "label": "ID 参数拼接",
+          "default": "&id=",
+          "description": "拼接在类型值后、歌曲/歌单 ID 前，最终形如：... + 本值 + 26348068"
+        },
+        "playerSize": {
+          "type": "text",
+          "label": "播放器尺寸",
+          "default": "small",
+          "description": "写入 <mood-player size=\"...\"> 的属性值，可选：small / normal"
+        }
+      }
+    }
+  }
+}
