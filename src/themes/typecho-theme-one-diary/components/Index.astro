@@ -112,7 +112,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 
 <Base options={options} urls={urls} user={user} isLoggedIn={isLoggedIn} pluginCtx={pluginCtx}>
   <div class="snowi-page">
-    
+
     <header class="site-header">
       <div class="header-brand">
         <h1 class="site-title">{options.title}</h1>
@@ -125,7 +125,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
         ))}
         <a href="#" class="nav-item" id="snowiSearchToggle">搜索</a>
       </nav>
-      
+
       <form class="header-search" id="snowiSearch" method="post" action={urls.siteUrl + '/'} role="search">
         <input type="text" name="s" placeholder="输入关键字搜索" autocomplete="off" />
         <button type="submit">搜索</button>
@@ -289,6 +289,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     </footer>
   </div>
 
+  <script is:inline src="/js/screenshot.js"></script>
   <script is:inline src="/js/mood-player.min.js"></script>
   <GlobalPlayer />
 </Base>
@@ -297,7 +298,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   (function () {
     var root = document.documentElement;
     var body = document.body;
-    
+
     var pageEl = document.querySelector('.snowi-page');
     if (pageEl) {
        if (root.classList.contains('snowi-dark')) {
@@ -395,6 +396,10 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     shareBtns.forEach(btn => {
       btn.addEventListener('click', async function () {
         if (this.disabled) return;
+        if (typeof html2canvas !== 'function') {
+          alert('截图组件未加载（/js/screenshot.js）');
+          return;
+        }
         const currentWrapper = this.closest('.card-wrapper');
         const originalHTML = this.innerHTML;
         const computedColor = window.getComputedStyle(this).color;
@@ -417,7 +422,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
             ignoreElements: (el) => el.tagName === 'MOOD-PLAYER' || el.tagName === 'VIDEO',
             onclone: (clonedDoc, element) => {
               element.style.padding = CAPTURE_PADDING;
-              
+
               element.style.setProperty('--bg-color', currentBg);
               element.style.setProperty('--card-bg', getComputedStyle(pageEl).getPropertyValue('--card-bg').trim());
               element.style.setProperty('--text-main', getComputedStyle(pageEl).getPropertyValue('--text-main').trim());
@@ -576,7 +581,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     overflow: hidden; 
     box-shadow: 0 2px 10px rgba(0,0,0,0.02); 
   }
-  
+
   .snowi-page .card-overlay {
     position: absolute; inset: 0; z-index: 1; display: block; border-radius: 16px;
   }
