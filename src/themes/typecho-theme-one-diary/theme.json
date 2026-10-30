@@ -1,0 +1,14 @@
+{
+  "id": "typecho-theme-one-diary",
+  "name": "Typecho one Diary",
+  "description": "Typecho-CF日记向主题",
+  "author": "Link",
+  "authorUrl": "https://lkin.cn/",
+  "version": "1.0.0",
+  "stylesheet": "style.css",
+  "stylesheets": ["normalize.css", "grid.css"],
+  "screenshot": "screenshot.png",
+  "homepage": "https://github.com/link9596/Cloudflare-Typecho",
+  "license": "GPL-2.0",
+  "tags": ["note", "classic", "typecho"]
+}
