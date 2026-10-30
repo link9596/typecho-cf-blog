@@ -1,0 +1,569 @@
+---
+/**
+ * 全局吸附播放器 Mood Player
+ */
+---
+
+<header class="global-bar" id="globalBar" hidden>
+  <div class="global-host" id="globalHost"></div>
+</header>
+
+<div class="gesture-hint" id="gestureHint">下滑关闭</div>
+
+<script is:inline>
+  (function () {
+    'use strict';
+
+    if (window.__moodGlobalInit) return;
+    window.__moodGlobalInit = true;
+
+    var HOST_ID = 'globalHost';
+    var BAR_ID  = 'globalBar';
+    var HINT_ID = 'gestureHint';
+    var DEBUG   = false;
+
+    var movedMap = new Map();
+    var gesture = null;
+    var hintEl = null;
+
+    function $(id) { return document.getElementById(id); }
+
+    function log(msg, type) {
+      if (!DEBUG) return;
+      if (type === 'warn') console.warn('[mood-global]', msg);
+      else console.log('[mood-global]', msg);
+    }
+
+    /* ============ 动画 ============ */
+
+    function fadeInElement(el, duration) {
+      return new Promise(function (resolve) {
+        var anim = el.animate(
+          [
+            { opacity: 0, filter: 'blur(14px)' },
+            { opacity: 1, filter: 'blur(0px)' }
+          ],
+          { duration: duration, easing: 'cubic-bezier(.32,.72,0,1)', fill: 'forwards' }
+        );
+        anim.onfinish = function () { try { anim.cancel(); } catch (_) {} resolve(); };
+        anim.oncancel = function () { resolve(); };
+      });
+    }
+
+    function slideInHost(el, duration) {
+      return new Promise(function (resolve) {
+        var anim = el.animate(
+          [
+            { transform: 'translateY(140%)', opacity: 0, filter: 'blur(14px)' },
+            { opacity: 1, offset: 0.6 },
+            { transform: 'translateY(0)', opacity: 1, filter: 'blur(0px)' }
+          ],
+          { duration: duration, easing: 'cubic-bezier(.32,.72,0,1)', fill: 'forwards' }
+        );
+        anim.onfinish = function () { try { anim.cancel(); } catch (_) {} resolve(); };
+        anim.oncancel = function () { resolve(); };
+      });
+    }
+
+    function slideOutHost(el, duration, fromOffset) {
+      var startY = fromOffset || 0;
+      var targetY = window.innerHeight + 80;
+      if (targetY <= startY + 40) targetY = startY + 300;
+      return new Promise(function (resolve) {
+        var anim = el.animate(
+          [
+            { transform: 'translateY(' + startY + 'px)' },
+            { transform: 'translateY(' + targetY + 'px)' }
+          ],
+          { duration: duration, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }
+        );
+        anim.onfinish = function () { resolve(); };
+        anim.oncancel = function () { resolve(); };
+      });
+    }
+
+    function resetHostVisual(host) {
+      host.getAnimations().forEach(function (a) { try { a.cancel(); } catch (_) {} });
+      host.style.opacity = '';
+      host.style.filter = '';
+      host.style.transform = '';
+    }
+
+    /* ============ 幽灵 / 占位 ============ */
+
+    function makeGhost(el) {
+      var rect = el.getBoundingClientRect();
+      var ghost = document.createElement('div');
+      ghost.style.cssText =
+        'position:fixed;' +
+        'left:' + rect.left + 'px;' +
+        'top:' + rect.top + 'px;' +
+        'width:' + rect.width + 'px;' +
+        'height:' + rect.height + 'px;' +
+        'pointer-events:none;' +
+        'z-index:2000;' +
+        'overflow:hidden;';
+      try {
+        if (el.shadowRoot) {
+          var shadow = ghost.attachShadow({ mode: 'open' });
+          shadow.innerHTML = el.shadowRoot.innerHTML;
+        }
+      } catch (_) {}
+      document.body.appendChild(ghost);
+      ghost.animate(
+        [
+          { opacity: 1, filter: 'blur(0px)', transform: 'scale(1)' },
+          { opacity: 0, filter: 'blur(14px)', transform: 'scale(.96)' }
+        ],
+        { duration: 340, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }
+      ).onfinish = function () { ghost.remove(); };
+    }
+
+    function createPlaceholder(width, height) {
+      var ph = document.createElement('div');
+      ph.className = 'player-placeholder';
+      ph.style.width = (width || 200) + 'px';
+      ph.style.maxWidth = '100%';
+      ph.style.height = Math.max(48, height || 64) + 'px';
+      ph.innerHTML = '<span class="ph-text">🎵 正在悬浮播放</span>';
+      return ph;
+    }
+
+    /* ============ 搬迁 ============ */
+
+    function findPlayer(e) {
+      var path = e.composedPath ? e.composedPath() : [];
+      for (var i = 0; i < path.length; i++) {
+        var n = path[i];
+        if (n && n.nodeType === 1 && n.tagName &&
+            n.tagName.toLowerCase() === 'mood-player') {
+          return n;
+        }
+      }
+      return null;
+    }
+
+    function moveToGlobal(el) {
+      if (!el || el.closest('#' + HOST_ID)) return;
+
+      var host = $(HOST_ID);
+      var bar  = $(BAR_ID);
+      if (!host || !bar) return;
+
+      var existing = host.querySelector('mood-player');
+      if (existing && existing !== el) {
+        returnExisting(existing, { animate: false });
+      }
+
+      var beforePaused = el._player ? el._player.audio.paused : null;
+      var beforeTime   = el._player ? el._player.audio.currentTime : null;
+
+      /* ★ 顺序关键：测量 → 置 null → DOM 操作 → 恢复 */
+      var rect = el.getBoundingClientRect();
+      var saved = el._player;
+      el._player = null;
+
+      makeGhost(el);
+      var ph = createPlaceholder(rect.width, rect.height);
+      el.parentNode.replaceChild(ph, el);
+      movedMap.set(el, ph);
+
+      resetHostVisual(host);
+      host.appendChild(el);
+      el._player = saved;
+
+      /* 底部吸附：抽屉向上展开 */
+      try {
+        var clip = el.shadowRoot && el.shadowRoot.querySelector('.mcp-drawer-clip');
+        if (clip) clip.setAttribute('data-pos', 'top');
+      } catch (_) {}
+
+      bar.hidden = false;
+      slideInHost(host, 800);
+
+      attachDrawerListener(el, bar);
+
+      if (DEBUG && beforePaused != null && el._player) {
+        var afterPaused = el._player.audio.paused;
+        var afterTime   = el._player.audio.currentTime;
+        log('搬迁 ' + (el.id || 'player') +
+            ' · ' + (beforePaused ? '暂停' : '播放') + ' → ' + (afterPaused ? '暂停' : '播放') +
+            ' · ' + beforeTime.toFixed(2) + 's → ' + afterTime.toFixed(2) + 's',
+            beforePaused === afterPaused ? 'ok' : 'warn');
+      }
+    }
+
+    function attachDrawerListener(el, bar) {
+      if (el._drawerListenerAttached) return;
+      el._drawerListenerAttached = true;
+      el.addEventListener('mood:playlisttoggle', function (e) {
+        if (e.detail && e.detail.open) bar.classList.add('drawer-open');
+        else bar.classList.remove('drawer-open');
+      });
+    }
+
+    /* ============ 归还 ============ */
+
+    function returnExisting(el, opts) {
+      opts = opts || {};
+      var animate = opts.animate !== false;
+      var fromOffset = opts.fromOffset || 0;
+      var host = $(HOST_ID);
+      var bar  = $(BAR_ID);
+      if (!el || !host) return;
+
+      if (el._player && !el._player.audio.paused) {
+        try { el._player.pause(true); } catch (_) {}
+      }
+
+      var ph = movedMap.get(el);
+
+      /* 占位已不存在（页面已切换 / 无返回位置）→ 直接销毁 */
+      if (!ph || !ph.parentNode) {
+        try { el.destroy(); } catch (_) {}
+        el.remove();
+        movedMap.delete(el);
+        if (!host.querySelector('mood-player')) {
+          bar.hidden = true;
+          bar.classList.remove('drawer-open');
+          resetHostVisual(host);
+        }
+        log('归还 ' + (el.id || 'player') + '（占位不存在，已销毁）');
+        return;
+      }
+
+      function doMoveBack() {
+        if (!movedMap.has(el)) return;
+        var p = movedMap.get(el);
+        var saved = el._player;
+        el._player = null;
+        if (p && p.parentNode) {
+          p.parentNode.replaceChild(el, p);
+          el._player = saved;
+        } else {
+          /* 执行期间占位被替换/移除，直接销毁 */
+          el._player = saved;
+          try { el.destroy(); } catch (_) {}
+          el.remove();
+        }
+        movedMap.delete(el);
+        try {
+          var clip = el.shadowRoot && el.shadowRoot.querySelector('.mcp-drawer-clip');
+          if (clip) clip.setAttribute('data-pos', 'bottom');
+        } catch (_) {}
+        if (!host.querySelector('mood-player')) {
+          bar.hidden = true;
+          bar.classList.remove('drawer-open');
+          resetHostVisual(host);
+        }
+      }
+
+      if (!animate) { doMoveBack(); return; }
+
+      slideOutHost(host, 460, fromOffset).then(function () {
+        doMoveBack();
+        return fadeInElement(el, 860);
+      }).then(function () {
+        log('归还 ' + (el.id || 'player') + ' 完成');
+      });
+    }
+
+    /* ============ 下滑手势 ============ */
+
+    function showHint(startRect) {
+      if (!hintEl) hintEl = $(HINT_ID);
+      if (!hintEl) return;
+      hintEl.style.left = (startRect.left + startRect.width / 2) + 'px';
+      hintEl.style.top  = (startRect.top - 32) + 'px';
+      hintEl.classList.add('visible');
+    }
+    function hideHint() {
+      if (!hintEl) hintEl = $(HINT_ID);
+      if (hintEl) hintEl.classList.remove('visible');
+    }
+
+    document.addEventListener('pointerdown', function (e) {
+      if (e.button !== undefined && e.button !== 0) return;
+      var host = $(HOST_ID);
+      var bar  = $(BAR_ID);
+      if (!host || !bar || bar.hidden) return;
+      if (!host.contains(e.target)) return;
+
+      var path = e.composedPath ? e.composedPath() : [];
+      for (var i = 0; i < path.length; i++) {
+        var n = path[i];
+        if (!n || n.nodeType !== 1) continue;
+        if (n.matches && n.matches(
+          '.mcp-btn, .mcp-side-btn, .mcp-cover-play, .mcp-pl-item, .mcp-drawer-inner, .mcp-progress'
+        )) return;
+      }
+
+      var playerEl = host.querySelector('mood-player');
+      if (!playerEl) return;
+
+      host.getAnimations().forEach(function (a) { try { a.cancel(); } catch (_) {} });
+      host.style.transform = '';
+      host.style.opacity = '';
+
+      gesture = {
+        startX: e.clientX,
+        startY: e.clientY,
+        pointerId: e.pointerId,
+        startTime: performance.now(),
+        hostRect: host.getBoundingClientRect(),
+        locked: false,
+        active: false,
+        player: playerEl
+      };
+      try { host.setPointerCapture(e.pointerId); } catch (_) {}
+    }, { passive: true });
+
+    document.addEventListener('pointermove', function (e) {
+      if (!gesture || e.pointerId !== gesture.pointerId) return;
+      var host = $(HOST_ID);
+      if (!host) return;
+
+      var dx = e.clientX - gesture.startX;
+      var dy = e.clientY - gesture.startY;
+
+      if (!gesture.locked) {
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8) {
+          gesture = null; hideHint(); return;
+        }
+        if (dy > 6) {
+          gesture.locked = true;
+          gesture.active = true;
+          showHint(gesture.hostRect);
+        } else if (dy < -6) {
+          gesture = null; return;
+        }
+      }
+
+      if (gesture.active) {
+        if (e.cancelable) e.preventDefault();
+        var offset = Math.max(0, dy);
+        host.style.transform = 'translateY(' + offset + 'px)';
+        var maxDist = Math.max(80, gesture.hostRect.height * 1.5);
+        host.style.opacity = String(Math.max(0.45, 1 - offset / maxDist));
+      }
+    }, { passive: false });
+
+    document.addEventListener('pointerup', function (e) {
+      if (!gesture || e.pointerId !== gesture.pointerId) return;
+      var g = gesture;
+      gesture = null;
+      hideHint();
+      var host = $(HOST_ID);
+      if (!host) return;
+
+      if (!g.active) {
+        host.style.transform = '';
+        host.style.opacity = '';
+        return;
+      }
+
+      var dy = e.clientY - g.startY;
+      var dt = Math.max(1, performance.now() - g.startTime);
+      var velocity = dy / dt;
+      var threshold = g.hostRect.height * 0.4;
+
+      var m = (host.style.transform || '').match(/translateY\(([\d.-]+)px\)/);
+      var fromOffset = m ? parseFloat(m[1]) : 0;
+      host.style.transform = '';
+      host.style.opacity = '';
+
+      var shouldReturn = dy > threshold || (velocity > 0.6 && dy > 30);
+
+      if (shouldReturn && g.player) {
+        returnExisting(g.player, { animate: true, fromOffset: fromOffset });
+      } else {
+        host.animate(
+          [
+            { transform: 'translateY(' + fromOffset + 'px)' },
+            { transform: 'translateY(0)' }
+          ],
+          { duration: 420, easing: 'cubic-bezier(.32,.72,0,1)', fill: 'forwards' }
+        ).onfinish = function () {
+          host.style.transform = '';
+          host.style.opacity = '';
+          var anims = host.getAnimations();
+          var last = anims[anims.length - 1];
+          if (last) { try { last.cancel(); } catch (_) {} }
+        };
+      }
+    }, { passive: true });
+
+    document.addEventListener('pointercancel', function () {
+      if (!gesture) return;
+      gesture = null;
+      hideHint();
+      var host = $(HOST_ID);
+      if (!host) return;
+      host.style.transform = '';
+      host.style.opacity = '';
+    });
+
+    /* ============ 播放触发搬迁 ============ */
+
+    document.addEventListener('mood:play', function (e) {
+      var el = findPlayer(e);
+      if (!el) return;
+      if (el.closest('#' + HOST_ID)) return;
+      moveToGlobal(el);
+    });
+
+    /* ============ 切页去重：同 api 的文章内播放器替换为占位 ============ */
+
+    /*
+     * 场景：首页播放器 A（api=X）已吸附到全局条，切到文章页，
+     * 文章里也有 <mood-player api=X>，此时页面会有两个同歌单播放器。
+     * 处理：销毁文章里的，替换成占位，并把 A 的占位指针更新到新页面的位置。
+     * 这样下滑归还时 A 会回到新页面文章里的位置，而不是旧页面。
+     */
+    function dedupeContentPlayers() {
+      var host = $(HOST_ID);
+      if (!host) return;
+      var gp = host.querySelector('mood-player');
+      if (!gp) return;
+      var api = gp.getAttribute('api');
+      if (!api) return;
+
+      var replaced = false;
+
+      document.querySelectorAll('mood-player').forEach(function (el) {
+        if (el.closest('#' + HOST_ID)) return;
+        if (el.getAttribute('api') !== api) return;
+
+        var rect = el.getBoundingClientRect();
+        try { el.destroy(); } catch (_) {}
+
+        var ph = createPlaceholder(rect.width, rect.height);
+        el.parentNode.replaceChild(ph, el);
+
+        /* 更新 gp 的占位指针，指向新页面里的位置 */
+        var oldPh = movedMap.get(gp);
+        if (oldPh && oldPh !== ph) movedMap.delete(gp);
+        movedMap.set(gp, ph);
+
+        replaced = true;
+      });
+
+      if (replaced && DEBUG) {
+        log('切页去重：已把 ' + api + ' 的文章内播放器替换为占位');
+      }
+    }
+
+    /* 绑定 Swup / View Transitions 的切页完成事件，等 DOM 稳定后再去重 */
+    function bindPageView() {
+      var handler = function () { setTimeout(dedupeContentPlayers, 60); };
+
+      if (window.swup && window.swup.hooks) {
+        window.swup.hooks.on('page:view', handler);
+      }
+      document.addEventListener('page:view', handler);
+      document.addEventListener('swup:page:view', handler);
+      document.addEventListener('astro:page-load', handler);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindPageView);
+    } else {
+      bindPageView();
+    }
+
+    /* 首次进入时也跑一次（防止直接刷新在文章页、首页已吸附的状态） */
+    bindPageView();
+    setTimeout(dedupeContentPlayers, 100);
+
+    log('全局播放器就绪');
+  })();
+</script>
+
+<style is:global>
+  /* ---------- 全局吸附条 ---------- */
+  .global-bar {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    touch-action: pan-x;
+  }
+  .global-bar[hidden] { display: none; }
+  .global-bar.drawer-open { touch-action: auto; }
+
+  .global-host {
+    pointer-events: auto;
+    width: 100%;
+    box-shadow: 0 12px 32px rgba(15,17,26,.18);
+    will-change: transform;
+  }
+  .global-host mood-player {
+    width: 100%;
+    display: block;
+  }
+
+  @media (max-width: 768px) {
+    .global-bar {
+      left: 12px;
+      right: 12px;
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    }
+  }
+  @media (min-width: 769px) {
+    .global-bar {
+      right: 24px;
+      bottom: 24px;
+      width: 400px;
+      max-width: calc(100vw - 48px);
+    }
+  }
+
+  /* 手势提示 */
+  .gesture-hint {
+    position: fixed;
+    z-index: 2001;
+    padding: 4px 12px;
+    background: rgba(20,22,31,.55);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    color: #fff;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 6px);
+    transition: opacity .2s, transform .2s;
+    white-space: nowrap;
+  }
+  .gesture-hint.visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  /* 文章内占位块 */
+  .player-placeholder {
+    border-radius: 10px;
+    background: linear-gradient(135deg,
+      rgba(122,162,255,.10),
+      rgba(201,140,255,.10));
+    border: 1px dashed rgba(90,108,255,.28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: rgba(15,17,26,.55);
+    user-select: none;
+    opacity: 0;
+    filter: blur(8px);
+    animation: ph-in 1280ms cubic-bezier(.32,.72,0,1) 60ms forwards;
+  }
+  .player-placeholder .ph-text {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  @keyframes ph-in {
+    to { opacity: 1; filter: blur(0); }
+  }
+</style>
