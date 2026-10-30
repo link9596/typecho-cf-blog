@@ -19,7 +19,7 @@ body {
   background-color: #f2f3f5;
 }
 
-/* clip 不创建滚动容器，避免破坏侧边栏的 position: sticky */
+/* clip 不创建滚动容器，避免影响页面内定位 */
 @supports (overflow-x: clip) {
   html,
   body {
@@ -332,14 +332,35 @@ html.snowi-dark .snowi-page .author-name {
   display: block;
 }
 
-.snowi-page .page-badge {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  color: var(--text-sub);
-  padding: 4px 10px;
+.snowi-page .author-avatar-link {
+  display: flex;
+  flex-shrink: 0;
   border-radius: 10px;
-  background-color: var(--btn-hover);
+  text-decoration: none;
+}
+
+/* 独立页面：标题放在卡片右上角（原 PAGE 标签位置） */
+.snowi-page .page-header .header-right {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.snowi-page .page-heading {
+  max-width: 100%;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.45;
+  letter-spacing: 0.3px;
+  color: var(--text-main);
+  text-align: right;
+  word-break: break-word;
+}
+
+.snowi-page .page-heading a {
+  color: inherit;
+  text-decoration: none;
 }
 
 .snowi-page .post-title {
@@ -589,12 +610,12 @@ html.snowi-dark .snowi-page .author-name {
 }
 
 /* ---------- Live Photo（兼容组件生成的 padding-top 容器与手动 HTML） ---------- */
-.snowi-page .live-photo {
+.live-photo {
   position: relative;
   display: block;
   width: 100%;
   overflow: hidden;
-  background-color: var(--media-bg);
+  background-color: var(--media-bg, #eeeeee);
   border-radius: 12px;
   cursor: pointer;
   user-select: none;
@@ -604,12 +625,12 @@ html.snowi-dark .snowi-page .author-name {
 }
 
 /* 没有内联比例时给默认 3:4，避免容器高度为 0 */
-.snowi-page .live-photo:where(:not([style*="padding-top"]):not([style*="aspect-ratio"])) {
+.live-photo:where(:not([style*="padding-top"]):not([style*="aspect-ratio"])) {
   aspect-ratio: 3 / 4;
 }
 
-.snowi-page .live-photo .live-photo-img,
-.snowi-page .live-photo .live-photo-video {
+:is(.snowi-page .live-photo, .lightbox-clone-img) .live-photo-img,
+:is(.snowi-page .live-photo, .lightbox-clone-img) .live-photo-video {
   position: absolute;
   top: 0;
   left: 0;
@@ -625,14 +646,14 @@ html.snowi-dark .snowi-page .author-name {
   user-select: none;
 }
 
-.snowi-page .live-photo .live-photo-img {
+:is(.snowi-page .live-photo, .lightbox-clone-img) .live-photo-img {
   z-index: 2;
   opacity: 1;
   transform: scale(1);
   transition: opacity 0.3s linear, transform 0.3s linear;
 }
 
-.snowi-page .live-photo .live-photo-video {
+:is(.snowi-page .live-photo, .lightbox-clone-img) .live-photo-video {
   z-index: 1;
   transform: scale(1);
   background-color: #000;
@@ -647,17 +668,17 @@ html.snowi-dark .snowi-page .author-name {
   border-radius: 0;
 }
 
-.snowi-page .live-photo.is-playing .live-photo-img {
+.live-photo.is-playing .live-photo-img {
   opacity: 0;
   transform: scale(1.08);
 }
 
-.snowi-page .live-photo.is-playing .live-photo-video {
+.live-photo.is-playing .live-photo-video {
   transform: scale(1.08);
 }
 
 /* 实况角标（由 /js/live.js 注入） */
-.snowi-page .live-photo-badge {
+.live-photo-badge {
   position: absolute;
   top: 12px;
   left: 12px;
@@ -673,19 +694,19 @@ html.snowi-dark .snowi-page .author-name {
   pointer-events: none;
 }
 
-.snowi-page .live-photo-icon {
+.live-photo-icon {
   position: relative;
   width: 20px;
   height: 20px;
 }
 
-.snowi-page .live-photo-icon-svg {
+.live-photo-icon-svg {
   display: block;
   width: 100%;
   height: 100%;
 }
 
-.snowi-page .live-photo-disabled-icon {
+.live-photo-disabled-icon {
   position: absolute;
   top: 0;
   left: 0;
@@ -694,7 +715,7 @@ html.snowi-dark .snowi-page .author-name {
   height: 100%;
 }
 
-.snowi-page .live-photo-text {
+.live-photo-text {
   margin-top: 1px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 12px;
@@ -704,7 +725,7 @@ html.snowi-dark .snowi-page .author-name {
   color: #000;
 }
 
-.snowi-page .live-photo-progress-ring {
+.live-photo-progress-ring {
   transition: stroke-dashoffset 0.2s linear;
 }
 
@@ -2158,12 +2179,8 @@ html.snowi-dark .snowi-page .code-digit {
   .snowi-page .page-layout > .sidebar-section {
     display: flex;
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1;
     margin-top: 12px;
-    max-height: calc(100vh - 48px);
-    overflow-y: auto;
-    position: sticky;
-    top: 24px;
     align-self: start;
   }
 
