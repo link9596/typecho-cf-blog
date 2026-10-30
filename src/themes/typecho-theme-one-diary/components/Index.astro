@@ -281,13 +281,13 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
               <ul class="widget-list">
                 {isLoggedIn ? (
                   <>
-                    <li><a href={urls.adminUrl}>后台 ({user?.screenName || user?.name})</a></li>
+                    <li><a href={urls.adminUrl} data-no-swup>后台 ({user?.screenName || user?.name})</a></li>
                     <li><form method="post" action={urls.logoutUrl}><button type="submit" class="logout-btn">退出登录</button></form></li>
                   </>
                 ) : (
-                  <li><a href={urls.loginUrl}>登录</a></li>
+                  <li><a href={urls.loginUrl} data-no-swup>登录</a></li>
                 )}
-                <li><a href={urls.feedUrl}>文章 RSS</a></li>
+                <li><a href={urls.feedUrl} data-no-swup>文章 RSS</a></li>
               </ul>
             </div>
           </>

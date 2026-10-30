@@ -387,7 +387,8 @@ const { siteTitle = '' } = Astro.props;
       if (selection) return;
 
       e.preventDefault();
-      if (overlay.href) window.location.href = overlay.href;
+      // 触发覆盖层链接的真实点击，让 Swup 的链接拦截接管（未启用时退化为普通跳转）
+      overlay.click();
     });
 
     /* ================= Swup / Astro 切页 ================= */

@@ -351,7 +351,7 @@ const emptyText = archiveType === 'search' ? '没有找到匹配的文章。' : 
               {isLoggedIn ? (
                 <>
                   <li>
-                    <a href={urls.adminUrl}>
+                    <a href={urls.adminUrl} data-no-swup>
                       进入后台{user?.screenName || user?.name ? `（${user?.screenName || user?.name}）` : ''}
                     </a>
                   </li>
@@ -362,10 +362,10 @@ const emptyText = archiveType === 'search' ? '没有找到匹配的文章。' : 
                   </li>
                 </>
               ) : (
-                <li><a href={urls.loginUrl}>登录</a></li>
+                <li><a href={urls.loginUrl} data-no-swup>登录</a></li>
               )}
-              <li><a href={urls.feedUrl}>文章 RSS</a></li>
-              <li><a href={urls.commentsFeedUrl}>评论 RSS</a></li>
+              <li><a href={urls.feedUrl} data-no-swup>文章 RSS</a></li>
+              <li><a href={urls.commentsFeedUrl} data-no-swup>评论 RSS</a></li>
             </ul>
           </section>
         )}

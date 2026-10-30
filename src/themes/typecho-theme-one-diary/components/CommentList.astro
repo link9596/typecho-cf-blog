@@ -51,12 +51,20 @@ const { comments, commentOptions, gravatarMap, permalink } = Astro.props;
         </div>
       </div>
 
+      {node.replyTo && (
+        <div class="comment-reply-context">
+          <span class="reply-label">回复</span>
+          <a class="reply-author" href={`#comment-${node.replyTo.coid}`}>@{node.replyTo.author}</a>
+          {node.replyTo.excerpt && <span class="reply-excerpt">「{node.replyTo.excerpt}」</span>}
+        </div>
+      )}
+
       <div class="comment-content" set:html={node.text} />
 
       {commentOptions.allowComment && (
         <div class="comment-reply">
           <a
-            href="#respond"
+            href="#respond" data-no-swup
             data-coid={node.coid}
             class="comment-reply-link"
             rel="nofollow"

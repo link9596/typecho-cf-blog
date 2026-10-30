@@ -336,7 +336,7 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
                   <div class="cancel-comment-reply">
                     <a
                       id="cancel-comment-reply-link"
-                      href="javascript:void(0)"
+                      href="javascript:void(0)" data-no-swup
                       style="display:none"
                       onclick="return TypechoComment.cancelReply()"
                     >取消回复</a>
@@ -347,7 +347,7 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
                   {isLoggedIn && (
                     <p class="respond-identity">
                       登录身份：
-                      <a href={urls.profileUrl}>{user?.screenName || user?.name}</a>
+                      <a href={urls.profileUrl} data-no-swup>{user?.screenName || user?.name}</a>
                       <form method="post" action={urls.logoutUrl} class="logout-form">
                         <button type="submit">退出 &raquo;</button>
                       </form>
@@ -468,7 +468,7 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
               {isLoggedIn ? (
                 <>
                   <li>
-                    <a href={urls.adminUrl}>
+                    <a href={urls.adminUrl} data-no-swup>
                       进入后台{user?.screenName || user?.name ? `（${user?.screenName || user?.name}）` : ''}
                     </a>
                   </li>
@@ -479,10 +479,10 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
                   </li>
                 </>
               ) : (
-                <li><a href={urls.loginUrl}>登录</a></li>
+                <li><a href={urls.loginUrl} data-no-swup>登录</a></li>
               )}
-              <li><a href={urls.feedUrl}>文章 RSS</a></li>
-              <li><a href={urls.commentsFeedUrl}>评论 RSS</a></li>
+              <li><a href={urls.feedUrl} data-no-swup>文章 RSS</a></li>
+              <li><a href={urls.commentsFeedUrl} data-no-swup>评论 RSS</a></li>
             </ul>
           </section>
         )}
