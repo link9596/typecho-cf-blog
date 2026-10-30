@@ -12,7 +12,7 @@ import { loadSidebarAndNav, loadNavPages, type SidebarData } from '@/lib/sidebar
 import { buildFtsMatchExpression, contentsFtsTableRef, FTS_MIN_CHARS, isFtsAvailable } from '@/lib/fulltext';
 import {
   buildPermalink, buildAuthorLink,
-  buildCategoryLink, buildTagLink, buildSearchLink,
+  buildCategoryLink, buildTagLink, buildSearchLink, buildDateLink,
 } from '@/lib/content';
 import { renderCommentText } from '@/lib/markdown';
 import { getRenderedContent, getRenderedExcerpts } from '@/lib/rendered-content';
@@ -27,8 +27,6 @@ import type {
   PostListItem, CommentNode, CommentOptions,
 } from '@/lib/theme-props';
 
-// 导入 createHash 用于同步生成 Gravatar 头像（在 prepareAuthorData 中使用）
-import { createHash } from 'node:crypto';
 
 // ─── Local row types (derived from Drizzle schema) ───────────────────────
 type ContentRow = typeof schema.contents.$inferSelect;
@@ -270,7 +268,7 @@ function toPostListItem(
 
 interface ArchiveParams {
   archiveTitle: string;
-  archiveType: 'index' | 'category' | 'tag' | 'author' | 'search';
+  archiveType: 'index' | 'category' | 'tag' | 'author' | 'search' | 'date';
   baseUrl: string;
   extraWhere?: ReturnType<typeof sql>;
   joinMid?: number;
@@ -626,8 +624,11 @@ export async function preparePostData(
   const defaultAvatar = (options as any).defaultAvatar || '/img/avatar.svg';
   let authorAvatar = defaultAvatar;
   if (author?.mail) {
-    const hash = createHash('md5').update(author.mail.trim().toLowerCase()).digest('hex');
-    authorAvatar = `https://www.gravatar.com/avatar/${hash}?s=48&d=identicon`;
+    authorAvatar = await buildGravatarUrl(author.mail, {
+      defaultImage: 'identicon',
+      size: 96,
+      rating: 'G',
+    });
   }
 
   const allComments = commentPage.rows;
@@ -830,12 +831,15 @@ export async function prepareAuthorData(
     : preloadedAuthor;
   if (!author) return new Response('Not Found', { status: 404 });
 
-  // 生成作者的头像 URL
-  const defaultAvatar = (ctx.options as any).defaultAvatar || '/img/avatar.png';
+  // 生成作者的头像 URL（与首页一致，统一走 libravatar）
+  const defaultAvatar = (ctx.options as any).defaultAvatar || '/img/avatar.svg';
   let avatarUrl = defaultAvatar;
   if (author.mail) {
-    const hash = createHash('md5').update(author.mail.trim().toLowerCase()).digest('hex');
-    avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=48&d=identicon`;
+    avatarUrl = await buildGravatarUrl(author.mail, {
+      defaultImage: 'identicon',
+      size: 96,
+      rating: 'G',
+    });
   }
 
   // 构造包含 avatarUrl 的 AuthorMap
@@ -878,6 +882,50 @@ export async function prepareSearchData(
         ? undefined
         : sql`(${schema.contents.title} LIKE ${`%${trimmed}%`} OR ${schema.contents.text} LIKE ${`%${trimmed}%`})`,
     ftsMatch: useFts ? buildFtsMatchExpression(trimmed) : null,
+  });
+}
+
+// ─── Date archive (year / month / day) ──────────────────────────────────
+
+function getDateArchiveRange(year: number, month?: number, day?: number): { start: number; end: number } {
+  if (month !== undefined && day !== undefined) {
+    const start = Math.floor(Date.UTC(year, month - 1, day) / 1000);
+    return { start, end: start + 86400 };
+  }
+  if (month !== undefined) {
+    return {
+      start: Math.floor(Date.UTC(year, month - 1, 1) / 1000),
+      end: Math.floor(Date.UTC(year, month, 1) / 1000),
+    };
+  }
+  return {
+    start: Math.floor(Date.UTC(year, 0, 1) / 1000),
+    end: Math.floor(Date.UTC(year + 1, 0, 1) / 1000),
+  };
+}
+
+export async function prepareDateData(
+  ctx: RequestContext,
+  requestUrl: string,
+  locals: Record<string, unknown>,
+  url: URL,
+  year: number,
+  month?: number,
+  day?: number,
+): Promise<ThemeArchiveProps> {
+  const { start, end } = getDateArchiveRange(year, month, day);
+  const archiveTitle = month !== undefined && day !== undefined
+    ? `${year} 年 ${month} 月 ${day} 日`
+    : month !== undefined
+      ? `${year} 年 ${month} 月`
+      : `${year} 年`;
+
+  return prepareArchiveData(ctx, requestUrl, locals, url, {
+    archiveTitle,
+    archiveType: 'date',
+    baseUrl: buildDateLink(year, month, day, ctx.urls.siteUrl),
+    extraWhere: sql`${schema.contents.created} >= ${start} AND ${schema.contents.created} < ${end}`,
+    countKey: `date:${year}-${month ?? 0}-${day ?? 0}`,
   });
 }
 

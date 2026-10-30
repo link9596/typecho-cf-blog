@@ -111,7 +111,7 @@ export interface ThemePageProps extends ThemeBaseProps {
 export interface ThemeArchiveProps extends ThemeBaseProps {
   /** Display title, e.g. "分类 技术 下的文章" */
   archiveTitle: string;
-  archiveType: 'category' | 'tag' | 'author' | 'search' | 'index';
+  archiveType: 'category' | 'tag' | 'author' | 'search' | 'index' | 'date';
   posts: PostListItem[];
   pagination: PaginationInfo;
 }

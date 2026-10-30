@@ -9,7 +9,7 @@ export interface GravatarUrlOptions {
 /**
  * Gravatar / Libravatar 都通过「邮箱 trim + 小写 后的 MD5 哈希」定位头像。
  * Web Crypto（crypto.subtle.digest）不支持 MD5，因此使用 node:crypto
- * （项目已启用 nodejs_compat，page-data.ts 同样在用 createHash('md5')）。
+ * （项目已启用 nodejs_compat）。
  */
 export async function createGravatarHash(email: string): Promise<string> {
   return createHash('md5').update(email.trim().toLowerCase()).digest('hex');
