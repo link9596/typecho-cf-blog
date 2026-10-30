@@ -7,7 +7,7 @@
  *  - 嵌套评论（CommentList）+ 评论分页 + TypechoComment 回复
  *  - 侧边栏 sidebarData
  *  - mood-player 播放器 + GlobalPlayer 迁移
- *  - 分享截图（html2canvas，含图片防拉伸、水印）
+ *  - 分享截图（html-to-image，含水印）
  */
 import Base from '@/layouts/Base.astro';
 import CommentList from './CommentList.astro';
@@ -335,15 +335,11 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
         {sidebarCategories.length > 0 && (
           <section class="widget">
             <h3 class="widget-title">分类</h3>
-            <ul class="widget-list widget-tags">
-              {sidebarCategories.map((cat: any) => (
-                <li>
-                  <a href={cat.permalink} class="widget-tag">
-                    {cat.name}<span class="widget-tag-count">{cat.count}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <ul class="widget-list">
+                  {sidebarCategories.map((cat: any) => (
+                    <li><a href={cat.permalink}>{cat.name} <span class="widget-count">{cat.count}</span></a></li>
+                  ))}
+                </ul>
           </section>
         )}
 

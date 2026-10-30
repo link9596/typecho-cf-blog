@@ -246,12 +246,12 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
             {recentComments.length > 0 && (
               <div class="widget">
                 <h3 class="widget-title">最近回复</h3>
-                <ul class="widget-list">
+                <ul class="widget-list widget-comments">
                   {recentComments.map((c: any) => (
                     <li>
-                      <a href={c.permalink}>
-                        <span class="comment-user">{c.author}:</span>
-                        <span class="comment-excerpt">{c.excerpt}</span>
+                      <a href={c.permalink} class="widget-comment-link">
+                        <span class="widget-comment-author">{c.author}</span>
+                        <span class="widget-comment-excerpt">{c.excerpt}</span>
                       </a>
                     </li>
                   ))}

@@ -132,112 +132,30 @@ const { siteTitle = '' } = Astro.props;
 
     ensureMoodPlayer();
 
-    /* ================= 分享截图 ================= */
+    /* ================= 分享截图（html-to-image） ================= */
 
-    var CAPTURE_PADDING = '16px 12px 20px';
-    var H2C_SRC = '/js/screenshot.js';
+    var SNAPSHOT_SRC = '/js/screenshot.js';
 
-    var LOADING_ICON =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="share-loading-icon spin">' +
-      '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9"></path>' +
-      '</svg>';
-
-    function shareIcon(color) {
-      return (
-        '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:' +
-        color +
-        ';stroke-width:2;stroke-linecap:round;stroke-linejoin:round;">' +
-        '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>' +
-        '<polyline points="16 6 12 2 8 6"></polyline>' +
-        '<line x1="12" y1="2" x2="12" y2="15"></line></svg>'
-      );
-    }
-
-    function ensureHtml2Canvas() {
-      if (window.html2canvas) return Promise.resolve(window.html2canvas);
-      if (window.__snowiH2C) return window.__snowiH2C;
-      window.__snowiH2C = new Promise(function (resolve, reject) {
+    function ensureHtmlToImage() {
+      if (window.htmlToImage && typeof window.htmlToImage.toPng === 'function') {
+        return Promise.resolve(window.htmlToImage);
+      }
+      if (window.__snowiH2I) return window.__snowiH2I;
+      window.__snowiH2I = new Promise(function (resolve, reject) {
         var script = document.createElement('script');
-        script.src = H2C_SRC;
+        script.src = SNAPSHOT_SRC;
         script.async = true;
         script.onload = function () {
-          if (window.html2canvas) resolve(window.html2canvas);
-          else reject(new Error('html2canvas missing'));
+          if (window.htmlToImage && typeof window.htmlToImage.toPng === 'function') {
+            resolve(window.htmlToImage);
+          } else {
+            reject(new Error('html-to-image missing'));
+          }
         };
         script.onerror = reject;
         document.head.appendChild(script);
       });
-      return window.__snowiH2C;
-    }
-
-    function waitImageReady(img) {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise(function (resolve) {
-        var done = function () {
-          resolve();
-        };
-        img.addEventListener('load', done, { once: true });
-        img.addEventListener('error', done, { once: true });
-        setTimeout(done, 6000);
-      });
-    }
-
-    function createCoverDataURL(img, targetW, targetH, pixelRatio) {
-      var cw = Math.max(1, Math.round(targetW * pixelRatio));
-      var ch = Math.max(1, Math.round(targetH * pixelRatio));
-      var canvas = document.createElement('canvas');
-      canvas.width = cw;
-      canvas.height = ch;
-      var ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-
-      var iw = img.naturalWidth;
-      var ih = img.naturalHeight;
-      if (!iw || !ih) return null;
-
-      var targetRatio = cw / ch;
-      var srcRatio = iw / ih;
-      var sx = 0;
-      var sy = 0;
-      var sw = iw;
-      var sh = ih;
-      if (srcRatio > targetRatio) {
-        sw = ih * targetRatio;
-        sx = (iw - sw) / 2;
-      } else {
-        sh = iw / targetRatio;
-        sy = (ih - sh) / 2;
-      }
-
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
-
-      try {
-        return canvas.toDataURL('image/png');
-      } catch (e) {
-        return null;
-      }
-    }
-
-    function snapshotCardImages(wrapper, pixelRatio) {
-      var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
-      if (imgs.length === 0) return Promise.resolve([]);
-      return Promise.all(imgs.map(waitImageReady)).then(function () {
-        var origPadding = wrapper.style.padding;
-        wrapper.style.padding = CAPTURE_PADDING;
-        void wrapper.offsetWidth;
-
-        var snapshots = imgs.map(function (img) {
-          var rect = img.getBoundingClientRect();
-          var w = Math.max(1, Math.round(rect.width));
-          var h = Math.max(1, Math.round(rect.height));
-          return { w: w, h: h, dataURL: createCoverDataURL(img, w, h, pixelRatio) };
-        });
-
-        wrapper.style.padding = origPadding;
-        return snapshots;
-      });
+      return window.__snowiH2I;
     }
 
     function getPageType() {
@@ -248,6 +166,14 @@ const { siteTitle = '' } = Astro.props;
       return 'index';
     }
 
+    function showCaptureOverlay() {
+      var overlay = document.createElement('div');
+      overlay.className = 'snowi-capture-overlay';
+      overlay.innerHTML = '<span class="snowi-capture-spinner"></span><span>生成图片中…</span>';
+      document.body.appendChild(overlay);
+      return overlay;
+    }
+
     async function handleShare(btn) {
       if (btn.disabled || btn.dataset.snowiBusy === '1') return;
 
@@ -255,84 +181,73 @@ const { siteTitle = '' } = Astro.props;
       var pageEl = document.querySelector('.snowi-page');
       if (!wrapper || !pageEl) return;
 
-      if (typeof window.html2canvas !== 'function') {
+      if (!(window.htmlToImage && typeof window.htmlToImage.toPng === 'function')) {
         try {
-          await ensureHtml2Canvas();
+          await ensureHtmlToImage();
         } catch (e) {
           alert('截图组件加载失败（/js/screenshot.js）');
           return;
         }
       }
 
-      var originalHTML = btn.innerHTML;
-      var computedColor = window.getComputedStyle(btn).color;
+      var type = getPageType();
+      var highResScale = (window.devicePixelRatio || 1) * 1.2;
+      var pageStyle = window.getComputedStyle(pageEl);
+      var currentBg = pageStyle.getPropertyValue('--bg-color').trim() || '#f2f3f5';
+      var cssVars = [
+        '--bg-color', '--card-bg', '--text-main', '--text-sub',
+        '--icon-color', '--btn-hover', '--media-bg', '--footer-bg',
+        '--watermark-color',
+      ];
+      var previousVars = {};
+      var previousPadding = wrapper.style.padding;
 
-      btn.innerHTML = LOADING_ICON;
       btn.disabled = true;
       btn.dataset.snowiBusy = '1';
 
+      var overlay = showCaptureOverlay();
+      wrapper.style.padding = '16px 12px 20px';
+
+      cssVars.forEach(function (name) {
+        previousVars[name] = wrapper.style.getPropertyValue(name);
+        wrapper.style.setProperty(name, pageStyle.getPropertyValue(name).trim());
+      });
+
+      var watermark = document.createElement('div');
+      watermark.className = 'snowi-watermark';
+      watermark.textContent = '❄️ ' + siteTitle + '.';
+      wrapper.appendChild(watermark);
+
       try {
-        var highResScale = (window.devicePixelRatio || 1) * 1.2;
-        var pageStyle = window.getComputedStyle(pageEl);
-        var currentBg = pageStyle.getPropertyValue('--bg-color').trim() || '#f2f3f5';
-        var snapshots = await snapshotCardImages(wrapper, highResScale);
-
-        var canvas = await window.html2canvas(wrapper, {
-          useCORS: true,
-          allowTaint: false,
+        var dataUrl = await window.htmlToImage.toPng(wrapper, {
           backgroundColor: currentBg,
-          scale: highResScale,
-          dpi: 300,
-          logging: false,
-          ignoreElements: function (el) {
-            return el.tagName === 'MOOD-PLAYER' || el.tagName === 'VIDEO';
+          pixelRatio: highResScale,
+          cacheBust: true,
+          filter: function (node) {
+            var tag = node.tagName;
+            return tag !== 'MOOD-PLAYER' && tag !== 'VIDEO';
           },
-          onclone: function (clonedDoc, element) {
-            element.style.padding = CAPTURE_PADDING;
-
-            ['--bg-color', '--card-bg', '--text-main', '--text-sub', '--icon-color', '--btn-hover', '--media-bg', '--footer-bg', '--watermark-color'].forEach(function (name) {
-              element.style.setProperty(name, pageStyle.getPropertyValue(name).trim());
-            });
-
-            var watermark = clonedDoc.createElement('div');
-            watermark.className = 'snowi-watermark';
-            watermark.textContent = '❄️ ' + siteTitle + '.';
-            element.appendChild(watermark);
-
-            var clonedBtn = element.querySelector('.share-btn');
-            if (clonedBtn) {
-              clonedBtn.innerHTML = shareIcon(computedColor);
-              clonedBtn.style.display = 'flex';
-            }
-
-            var clonedImgs = element.querySelectorAll('img');
-            clonedImgs.forEach(function (img, index) {
-              var snap = snapshots[index];
-              if (!snap) return;
-              if (snap.dataURL) img.setAttribute('src', snap.dataURL);
-              img.style.width = snap.w + 'px';
-              img.style.height = snap.h + 'px';
-              img.style.maxWidth = 'none';
-              img.style.maxHeight = 'none';
-              img.style.objectFit = 'fill';
-            });
-          }
         });
 
-        var type = getPageType();
         var prefix =
           type === 'index'
             ? 'Snowi-'
             : 'Snowi-' + type.charAt(0).toUpperCase() + type.slice(1) + '-';
         var link = document.createElement('a');
         link.download = prefix + Date.now() + '.png';
-        link.href = canvas.toDataURL('image/png');
+        link.href = dataUrl;
         link.click();
       } catch (err) {
         console.error('截图失败:', err);
         alert('截图生成失败，请检查图片跨域问题。');
       } finally {
-        btn.innerHTML = originalHTML;
+        watermark.remove();
+        overlay.remove();
+        wrapper.style.padding = previousPadding;
+        cssVars.forEach(function (name) {
+          if (previousVars[name]) wrapper.style.setProperty(name, previousVars[name]);
+          else wrapper.style.removeProperty(name);
+        });
         btn.disabled = false;
         delete btn.dataset.snowiBusy;
       }
@@ -392,6 +307,15 @@ const { siteTitle = '' } = Astro.props;
     });
 
     /* ================= Swup / Astro 切页 ================= */
+
+    // Swup 的 fade 主题在缓存页面/快速替换时可能跳过 in 动画；这里统一补一个淡入
+    document.addEventListener('astro:after-swap', function () {
+      var main = document.getElementById('main');
+      if (!main) return;
+      main.classList.remove('snowi-page-in');
+      void main.offsetWidth;
+      main.classList.add('snowi-page-in');
+    });
 
     document.addEventListener('astro:page-load', function () {
       // 换页后同步主题按钮的文字与图标
