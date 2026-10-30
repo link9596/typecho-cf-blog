@@ -28,24 +28,35 @@ const sidebarCategories = sidebarData?.categories ?? [];
 const archives = sidebarData?.archives ?? [];
 const hasSidebar = recentPosts.length > 0 || recentComments.length > 0 || sidebarCategories.length > 0 || archives.length > 0;
 
-/* 日期拆解 */
+/* 日期拆解（修复：保证周几一定返回） */
 type DateParts = { day: string; weekday: string; yearMonth: string; time: string };
 function getDateParts(ts: number, tz?: string): DateParts {
+  const date = new Date(ts * 1000);
+  const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  
   try {
     const fmt = new Intl.DateTimeFormat('zh-CN', {
       timeZone: tz || undefined, year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: false
     });
-    const parts = fmt.formatToParts(new Date(ts * 1000));
+    const parts = fmt.formatToParts(date);
     const pick = (t: string) => parts.find((p) => p.type === t)?.value || '';
     let hour = pick('hour');
     if (hour === '24') hour = '00';
-    const weekday = pick('weekday').replace('星期', '周').replace('周天', '周日');
+    
+    // 单独提取星期，兼容 SSR
+    const weekdayFmt = new Intl.DateTimeFormat('zh-CN', { timeZone: tz || undefined, weekday: 'short' });
+    let weekday = weekdayFmt.format(date).replace('星期', '周').replace('周天', '周日').replace('星期日', '周日');
+    
     return { day: pick('day'), weekday, yearMonth: `${pick('year')}/${pick('month')}`, time: `${hour}:${pick('minute')}` };
   } catch {
-    const d = new Date(ts * 1000);
     const p2 = (n: number) => String(n).padStart(2, '0');
-    return { day: p2(d.getDate()), weekday: '', yearMonth: `${d.getFullYear()}/${p2(d.getMonth() + 1)}`, time: `${p2(d.getHours())}:${p2(d.getMinutes())}` };
+    return { 
+      day: p2(date.getDate()), 
+      weekday: days[date.getDay()], 
+      yearMonth: `${date.getFullYear()}/${p2(date.getMonth() + 1)}`, 
+      time: `${p2(date.getHours())}:${p2(date.getMinutes())}` 
+    };
   }
 }
 
@@ -667,33 +678,32 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   .snowi-page .post-category a { text-decoration: none; color: inherit; }
   .snowi-page .post-category a:hover { color: var(--text-main); }
 
-  /* 底部操作区（修复铺满和靠右问题） */
+  /* 底部操作区（更紧凑的高度） */
   .snowi-page .post-actions {
     position: relative; 
     z-index: 2;
     background-color: var(--footer-bg); 
-    /* 强制撑满卡片并抵消 padding */
     width: calc(100% + 32px) !important;
     margin-left: -16px !important;
     margin-right: -16px !important;
     margin-bottom: -16px !important;
     margin-top: 4px;
-    padding: 8px 16px; 
+    padding: 6px 16px; /* 高度减小 */
     border-radius: 0 0 16px 16px; 
     display: flex !important; 
     justify-content: flex-end !important; 
     align-items: center; 
-    gap: 8px; 
+    gap: 4px; /* 图标间距变小 */
     align-self: stretch;
   }
 
   .snowi-page .action-btn {
-    background: none; border: none; cursor: pointer; padding: 4px; border-radius: 6px; 
+    background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 6px; 
     display: flex; align-items: center; justify-content: center; color: var(--icon-color); transition: all 0.2s;
     text-decoration: none;
   }
   .snowi-page .action-btn:hover { background-color: var(--btn-hover); color: var(--text-main); }
-  .snowi-page .action-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .snowi-page .action-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
   /* 水印 */
   .snowi-page .snowi-watermark {
@@ -713,15 +723,15 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   }
   .snowi-page .page-navigator a:hover { color: var(--text-main); }
 
-  /* 侧边栏：仅在 PC 大屏显示（手机端直接隐藏，不放页脚） */
+  /* 侧边栏：仅在 PC 大屏显示（手机端直接隐藏） */
   .snowi-page .sidebar-section {
-    display: none; /* 默认隐藏 */
+    display: none;
     width: 100%; max-width: 440px; margin-top: 24px; flex-direction: column; gap: 16px;
   }
 
   @media (min-width: 860px) {
     .snowi-page .sidebar-section {
-      display: flex; /* 大屏时才显示侧边栏 */
+      display: flex;
     }
   }
 
