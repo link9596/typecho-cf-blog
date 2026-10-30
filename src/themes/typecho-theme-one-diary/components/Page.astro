@@ -1,0 +1,1626 @@
+---
+/**
+ * Snowi theme — Independent page component
+ *
+ * 保留能力：
+ *  - 密码保护内容
+ *  - 嵌套评论（CommentList）+ 评论分页 + TypechoComment 回复
+ *  - 侧边栏 sidebarData
+ *  - mood-player 播放器 + GlobalPlayer 迁移
+ *  - 分享截图（html2canvas，含图片防拉伸、水印）
+ */
+import Base from '@/layouts/Base.astro';
+import CommentList from './CommentList.astro';
+import type { ThemePageProps } from '@/lib/theme-props';
+import GlobalPlayer from './GlobalPlayer.astro';
+
+type Props = ThemePageProps;
+
+const {
+  options, urls, user, isLoggedIn, pages, sidebarData, currentPath, pluginCtx,
+  page, comments, commentOptions, commentPagination, gravatarMap,
+} = Astro.props;
+
+const isIndex = currentPath === '/';
+const totalComments = commentPagination.totalComments;
+
+/* 侧边栏数据兜底 */
+const recentPosts = sidebarData?.recentPosts ?? [];
+const recentComments = sidebarData?.recentComments ?? [];
+const sidebarCategories = sidebarData?.categories ?? [];
+const archives = sidebarData?.archives ?? [];
+const hasSidebar =
+  recentPosts.length > 0 ||
+  recentComments.length > 0 ||
+  sidebarCategories.length > 0 ||
+  archives.length > 0;
+
+/* 日期拆解：日 / 星期 / 年-月 / 时:分 */
+type DateParts = { day: string; weekday: string; yearMonth: string; time: string };
+
+function getDateParts(ts: number, tz?: string): DateParts {
+  try {
+    const fmt = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: tz || undefined,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      weekday: 'short',
+    });
+    const parts = fmt.formatToParts(new Date(ts * 1000));
+    const pick = (t: string) => parts.find((p) => p.type === t)?.value || '';
+    let hour = pick('hour');
+    if (hour === '24') hour = '00';
+    const weekday = pick('weekday').replace('星期', '周').replace('周天', '周日');
+    return {
+      day: pick('day'),
+      weekday,
+      yearMonth: `${pick('year')}/${pick('month')}`,
+      time: `${hour}:${pick('minute')}`,
+    };
+  } catch {
+    const d = new Date(ts * 1000);
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    return {
+      day: p2(d.getDate()),
+      weekday: '',
+      yearMonth: `${d.getFullYear()}/${p2(d.getMonth() + 1)}`,
+      time: `${p2(d.getHours())}:${p2(d.getMinutes())}`,
+    };
+  }
+}
+
+const pageDate = getDateParts(page.created, options.timezone);
+const canSeeContent = !page.hasPassword || page.passwordVerified;
+const submittedPassword = Astro.url.searchParams.get('password') || '';
+---
+
+<!-- 提前应用暗色主题，避免首屏闪烁 -->
+<script is:inline>
+  try {
+    if (localStorage.getItem('snowi-theme') === 'dark') {
+      document.documentElement.classList.add('snowi-dark');
+    }
+  } catch (e) {}
+</script>
+
+<Base
+  title={page.title}
+  options={options}
+  urls={urls}
+  user={user}
+  isLoggedIn={isLoggedIn}
+  pluginCtx={pluginCtx}
+  pageContext={{ hasComments: commentOptions.allowComment, pageType: 'page' }}
+>
+  <div class="snowi-page">
+
+    <!-- ================= 页首 ================= -->
+    <header class="site-header">
+      <div class="header-brand">
+        <h1 class="site-title">{options.title}</h1>
+        {options.description && <p class="site-subtitle">{options.description}</p>}
+      </div>
+
+      <nav class="header-nav">
+        <a
+          href={urls.siteUrl + '/'}
+          class:list={['nav-item', { active: isIndex }]}
+        >首页</a>
+        {pages.map((p) => (
+          <a
+            href={p.permalink}
+            title={p.title}
+            class:list={['nav-item', { active: page.slug === p.slug }]}
+          >{p.title}</a>
+        ))}
+        <button type="button" class="nav-item nav-search-toggle" id="snowiSearchToggle">搜索</button>
+      </nav>
+
+      <form class="header-search" id="snowiSearch" method="post" action={urls.siteUrl + '/'} role="search">
+        <label for="s" class="sr-only">搜索关键字</label>
+        <input type="text" id="s" name="s" class="text" placeholder="输入关键字搜索" autocomplete="off" />
+        <button type="submit" class="search-submit">搜索</button>
+      </form>
+    </header>
+
+    <!-- ================= 主体：独立页 + 侧边栏 ================= -->
+    <div class="page-layout">
+
+      <main class="page-container" role="main">
+
+        <!-- ========== 页面卡片 ========== -->
+        <div class="card-wrapper">
+          <article
+            class="post-card page-detail-card"
+            itemscope
+            itemtype="http://schema.org/WebPage"
+          >
+            <!-- 头部：日期 -->
+            <header class="post-header">
+              <div class="header-left">
+                <div class="date-top">
+                  <span
+                    class="day-num"
+                    datetime={new Date(page.created * 1000).toISOString()}
+                  >{pageDate.day}</span>
+                  {pageDate.weekday && <span class="weekday">{pageDate.weekday}</span>}
+                </div>
+                <div class="date-bottom">
+                  <span class="year-month">{pageDate.yearMonth}</span>
+                  <span class="time">{pageDate.time}</span>
+                </div>
+              </div>
+
+              <div class="header-right">
+                <span class="page-badge">PAGE</span>
+              </div>
+            </header>
+
+            <!-- 标题 -->
+            <h1 class="post-title" itemprop="name headline">
+              <a itemprop="url" href={page.permalink}>{page.title}</a>
+            </h1>
+
+            <!-- 正文 / 密码 -->
+            {!canSeeContent ? (
+              <div class="post-password">
+                <p class="post-password-tip">🔒 请输入密码访问此内容：</p>
+                <form method="get" action={page.permalink} class="post-password-form">
+                  <input type="password" name="password" class="text" placeholder="请输入密码" required />
+                  <button type="submit" class="submit">提交</button>
+                </form>
+              </div>
+            ) : (
+              <div class="post-content" itemprop="articleBody" set:html={page.content} />
+            )}
+
+            <!-- 底部操作 -->
+            <footer class="post-actions">
+              <a
+                class="action-btn"
+                href="#comments"
+                aria-label="评论"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+                {totalComments > 0 && <span class="action-count">{totalComments}</span>}
+              </a>
+              <button class="action-btn share-btn" type="button" aria-label="分享下载">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+                  <polyline points="16 6 12 2 8 6"></polyline>
+                  <line x1="12" y1="2" x2="12" y2="15"></line>
+                </svg>
+              </button>
+            </footer>
+          </article>
+        </div>
+
+        <!-- ========== 评论区 ========== -->
+        {canSeeContent && (
+          <div class="card-wrapper">
+            <section id="comments" class="post-card comments-card">
+
+              {commentOptions.allowComment ? (
+                <>
+                  {totalComments > 0 ? (
+                    <>
+                      <h3 class="comments-title">
+                        {totalComments === 1 ? '仅有一条评论' : `已有 ${totalComments} 条评论`}
+                      </h3>
+                      <ol class="comment-list">
+                        <CommentList
+                          comments={comments}
+                          commentOptions={commentOptions}
+                          gravatarMap={gravatarMap}
+                          permalink={page.permalink}
+                        />
+                      </ol>
+
+                      {commentPagination.enabled && commentPagination.totalPages > 1 && (
+                        <nav class="page-navigator comment-page-navigator" aria-label="评论分页">
+                          {commentPagination.prevUrl && (
+                            <a class="prev" href={commentPagination.prevUrl} rel="prev">上一页</a>
+                          )}
+                          {commentPagination.pages.map((pageNumber) =>
+                            pageNumber === commentPagination.currentPage ? (
+                              <span class="current" aria-current="page">{pageNumber}</span>
+                            ) : (
+                              <a href={commentPagination.pageUrls[pageNumber]}>{pageNumber}</a>
+                            )
+                          )}
+                          {commentPagination.nextUrl && (
+                            <a class="next" href={commentPagination.nextUrl} rel="next">下一页</a>
+                          )}
+                        </nav>
+                      )}
+                    </>
+                  ) : (
+                    <h3 class="comments-title">暂无评论</h3>
+                  )}
+
+                  <div id="respond" class="respond">
+                    <div class="cancel-comment-reply" style="display:none">
+                      <a
+                        id="cancel-comment-reply-link"
+                        href={`${page.permalink}#respond`}
+                        rel="nofollow"
+                        onclick="return TypechoComment.cancelReply()"
+                      >取消回复</a>
+                    </div>
+
+                    <h3 id="response" class="respond-title">添加新评论</h3>
+
+                    <form method="post" action="/api/comment" id="comment-form" class="comment-form" role="form">
+                      <input type="hidden" name="cid" value={String(page.cid)} />
+                      <input type="hidden" name="parent" id="comment-parent" value="0" />
+                      {page.hasPassword && page.passwordVerified && (
+                        <input type="hidden" name="password" value={submittedPassword} />
+                      )}
+                      {commentOptions.securityToken && (
+                        <input type="hidden" name="_" value={commentOptions.securityToken} />
+                      )}
+
+                      {isLoggedIn ? (
+                        <p class="respond-identity">
+                          登录身份：
+                          <a href={urls.profileUrl}>{user?.screenName || user?.name}</a>
+                        </p>
+                      ) : (
+                        <div class="form-row">
+                          <p class="form-field">
+                            <label for="author" class="required">称呼</label>
+                            <input type="text" name="author" id="author" class="text" required />
+                          </p>
+                          <p class="form-field">
+                            <label for="mail">Email</label>
+                            <input type="email" name="mail" id="mail" class="text" />
+                          </p>
+                        </div>
+                      )}
+
+                      <p class="form-field">
+                        <label for="textarea" class="required">内容</label>
+                        <textarea rows="6" name="text" id="textarea" class="textarea" required></textarea>
+                      </p>
+
+                      <p class="form-submit">
+                        <button type="submit" class="submit">提交评论</button>
+                      </p>
+                    </form>
+                  </div>
+                </>
+              ) : (
+                <h3 class="comments-closed">评论已关闭</h3>
+              )}
+
+              <script is:inline>
+                var TypechoComment = {
+                  dom: function (id) { return document.getElementById(id); },
+                  reply: function (commentId, coid) {
+                    var comment = this.dom(commentId);
+                    var respond = this.dom('respond');
+                    var cancelLink = this.dom('cancel-comment-reply-link');
+                    var parentInput = this.dom('comment-parent');
+                    if (!comment || !respond || !parentInput) return true;
+                    parentInput.value = coid;
+                    comment.appendChild(respond);
+                    if (cancelLink) cancelLink.style.display = '';
+                    try { this.dom('textarea').focus(); } catch (e) {}
+                    return false;
+                  },
+                  cancelReply: function () {
+                    var respond = this.dom('respond');
+                    var cancelLink = this.dom('cancel-comment-reply-link');
+                    var parentInput = this.dom('comment-parent');
+                    var comments = this.dom('comments');
+                    if (!respond || !comments || !parentInput) return false;
+                    parentInput.value = '0';
+                    if (cancelLink) cancelLink.style.display = 'none';
+                    comments.appendChild(respond);
+                    return false;
+                  }
+                };
+              </script>
+            </section>
+          </div>
+        )}
+
+      </main>
+
+      <!-- ================= 侧边栏 ================= -->
+      <aside class="sidebar-section" role="complementary">
+        {recentPosts.length > 0 && (
+          <section class="widget">
+            <h3 class="widget-title">最新文章</h3>
+            <ul class="widget-list">
+              {recentPosts.map((p: any) => (
+                <li><a href={p.permalink}>{p.title}</a></li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {recentComments.length > 0 && (
+          <section class="widget">
+            <h3 class="widget-title">最近回复</h3>
+            <ul class="widget-list widget-comments">
+              {recentComments.map((c: any) => (
+                <li>
+                  <a href={c.permalink} class="widget-comment-link">
+                    <span class="widget-comment-author">{c.author}</span>
+                    <span class="widget-comment-excerpt">{c.excerpt}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {sidebarCategories.length > 0 && (
+          <section class="widget">
+            <h3 class="widget-title">分类</h3>
+            <ul class="widget-list widget-tags">
+              {sidebarCategories.map((cat: any) => (
+                <li>
+                  <a href={cat.permalink} class="widget-tag">
+                    {cat.name}<span class="widget-tag-count">{cat.count}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {archives.length > 0 && (
+          <section class="widget">
+            <h3 class="widget-title">归档</h3>
+            <ul class="widget-list">
+              {archives.map((archive: any) => (
+                <li><a href={archive.permalink}>{archive.date}</a></li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {hasSidebar && (
+          <section class="widget">
+            <h3 class="widget-title">其它</h3>
+            <ul class="widget-list">
+              {isLoggedIn ? (
+                <>
+                  <li>
+                    <a href={urls.adminUrl}>
+                      进入后台{user?.screenName || user?.name ? `（${user?.screenName || user?.name}）` : ''}
+                    </a>
+                  </li>
+                  <li>
+                    <form method="post" action={urls.logoutUrl} class="logout-form">
+                      <button type="submit">退出登录</button>
+                    </form>
+                  </li>
+                </>
+              ) : (
+                <li><a href={urls.loginUrl}>登录</a></li>
+              )}
+              <li><a href={urls.feedUrl}>文章 RSS</a></li>
+              <li><a href={urls.commentsFeedUrl}>评论 RSS</a></li>
+            </ul>
+          </section>
+        )}
+      </aside>
+    </div>
+
+    <!-- ================= 页脚 ================= -->
+    <footer class="page-footer">
+      <button class="theme-toggle" id="snowiThemeToggle" type="button">
+        <span id="snowiThemeIcon">🌙</span>
+        <span id="snowiThemeText">切换至暗色模式</span>
+      </button>
+
+      <p class="site-copyright">
+        &copy; {new Date().getFullYear()} <a href={urls.siteUrl}>{options.title}</a> · 一起来堆雪人！
+      </p>
+    </footer>
+
+  </div>
+
+  <!-- 播放器脚本（先加载，确保 customElements 就绪） -->
+  <script is:inline src="/js/mood-player.min.js"></script>
+
+  <!-- 全局吸附播放器：搬迁逻辑 + 吸附条，位于内容之外，切页不被 Swup 替换 -->
+  <GlobalPlayer />
+</Base>
+
+<!-- ==================================================================== -->
+<!-- 交互脚本                                                             -->
+<!-- ==================================================================== -->
+<script is:inline define:vars={{ siteTitle: options.title }}>
+  (function () {
+    var page = document.querySelector('.snowi-page');
+    if (!page) return;
+
+    /* ---------------- 主题切换 ---------------- */
+    var root = document.documentElement;
+    var toggle = document.getElementById('snowiThemeToggle');
+    var iconEl = document.getElementById('snowiThemeIcon');
+    var textEl = document.getElementById('snowiThemeText');
+
+    function applyTheme(isDark) {
+      if (isDark) root.classList.add('snowi-dark');
+      else root.classList.remove('snowi-dark');
+      if (iconEl) iconEl.textContent = isDark ? '☀️' : '🌙';
+      if (textEl) textEl.textContent = isDark ? '切换至亮色模式' : '切换至暗色模式';
+    }
+
+    var stored = null;
+    try { stored = localStorage.getItem('snowi-theme'); } catch (e) {}
+    applyTheme(stored === 'dark');
+
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        var isDark = !root.classList.contains('snowi-dark');
+        applyTheme(isDark);
+        try { localStorage.setItem('snowi-theme', isDark ? 'dark' : 'light'); } catch (e) {}
+      });
+    }
+
+    /* ---------------- 搜索展开 ---------------- */
+    var searchToggle = document.getElementById('snowiSearchToggle');
+    var searchForm = document.getElementById('snowiSearch');
+    if (searchToggle && searchForm) {
+      searchToggle.addEventListener('click', function () {
+        var open = searchForm.classList.toggle('open');
+        searchToggle.classList.toggle('active', open);
+        if (open) {
+          var input = searchForm.querySelector('input');
+          if (input) input.focus();
+        }
+      });
+    }
+
+    /* ---------------- 分享截图 ---------------- */
+    var CAPTURE_PADDING = '16px 12px 20px';
+    var H2C_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+
+    function ensureHtml2Canvas() {
+      if (window.html2canvas) return Promise.resolve(window.html2canvas);
+      if (window.__snowiH2C) return window.__snowiH2C;
+      window.__snowiH2C = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = H2C_URL;
+        s.onload = function () { resolve(window.html2canvas); };
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      return window.__snowiH2C;
+    }
+
+    function waitImageReady(img) {
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+      return new Promise(function (resolve) {
+        var done = function () { resolve(); };
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+        setTimeout(done, 6000);
+      });
+    }
+
+    function createCoverDataURL(img, targetW, targetH, pixelRatio) {
+      var cw = Math.max(1, Math.round(targetW * pixelRatio));
+      var ch = Math.max(1, Math.round(targetH * pixelRatio));
+      var canvas = document.createElement('canvas');
+      canvas.width = cw;
+      canvas.height = ch;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      var iw = img.naturalWidth;
+      var ih = img.naturalHeight;
+      if (!iw || !ih) return null;
+
+      var targetRatio = cw / ch;
+      var srcRatio = iw / ih;
+      var sx = 0, sy = 0, sw = iw, sh = ih;
+      if (srcRatio > targetRatio) {
+        sw = ih * targetRatio;
+        sx = (iw - sw) / 2;
+      } else {
+        sh = iw / targetRatio;
+        sy = (ih - sh) / 2;
+      }
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
+
+      try { return canvas.toDataURL('image/png'); }
+      catch (e) { console.warn('图片无法导出', e); return null; }
+    }
+
+    async function snapshotCardImages(wrapper, pixelRatio) {
+      var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
+      if (imgs.length === 0) return [];
+      await Promise.all(imgs.map(waitImageReady));
+
+      var origPadding = wrapper.style.padding;
+      wrapper.style.padding = CAPTURE_PADDING;
+      void wrapper.offsetWidth;
+
+      var snapshots = imgs.map(function (img) {
+        var rect = img.getBoundingClientRect();
+        var w = Math.max(1, Math.round(rect.width));
+        var h = Math.max(1, Math.round(rect.height));
+        return { w: w, h: h, dataURL: createCoverDataURL(img, w, h, pixelRatio) };
+      });
+
+      wrapper.style.padding = origPadding;
+      return snapshots;
+    }
+
+    var loadingIconHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;">' +
+      '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9">' +
+      '<animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/>' +
+      '</path></svg>';
+
+    var shareBtns = document.querySelectorAll('.share-btn');
+    shareBtns.forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        if (this.disabled) return;
+
+        var wrapper = this.closest('.card-wrapper');
+        if (!wrapper) return;
+
+        var originalHTML = this.innerHTML;
+        var computedColor = window.getComputedStyle(this).color;
+
+        this.innerHTML = loadingIconHTML;
+        this.disabled = true;
+
+        try {
+          var h2c = await ensureHtml2Canvas();
+          var highResScale = (window.devicePixelRatio || 1) * 1.2;
+          var bgSource = document.querySelector('.snowi-page') || document.body;
+          var currentBg = getComputedStyle(bgSource).getPropertyValue('--bg-color').trim() || '#f2f3f5';
+
+          var snapshots = await snapshotCardImages(wrapper, highResScale);
+
+          var canvas = await h2c(wrapper, {
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: currentBg,
+            scale: highResScale,
+            dpi: 300,
+            logging: false,
+            onclone: function (clonedDoc, element) {
+              element.style.padding = CAPTURE_PADDING;
+
+              var watermark = clonedDoc.createElement('div');
+              watermark.className = 'snowi-watermark';
+              watermark.textContent = '❄️ ' + siteTitle + '.';
+              element.appendChild(watermark);
+
+              var clonedBtn = element.querySelector('.share-btn');
+              if (clonedBtn) {
+                clonedBtn.innerHTML =
+                  '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:' +
+                  computedColor +
+                  ';stroke-width:2;stroke-linecap:round;stroke-linejoin:round;">' +
+                  '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>' +
+                  '<polyline points="16 6 12 2 8 6"></polyline>' +
+                  '<line x1="12" y1="2" x2="12" y2="15"></line></svg>';
+              }
+
+              var clonedImgs = element.querySelectorAll('img');
+              clonedImgs.forEach(function (img, index) {
+                var snap = snapshots[index];
+                if (!snap) return;
+                if (snap.dataURL) img.setAttribute('src', snap.dataURL);
+                img.style.width = snap.w + 'px';
+                img.style.height = snap.h + 'px';
+                img.style.maxWidth = 'none';
+                img.style.maxHeight = 'none';
+                img.style.objectFit = 'fill';
+              });
+            },
+          });
+
+          var link = document.createElement('a');
+          link.download = 'Snowi-Page-' + Date.now() + '.png';
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        } catch (err) {
+          console.error('截图失败:', err);
+          alert('截图生成失败，请检查图片跨域问题。');
+        } finally {
+          this.innerHTML = originalHTML;
+          this.disabled = false;
+        }
+      });
+    });
+  })();
+</script>
+
+<!-- ==================================================================== -->
+<!-- 样式                                                                 -->
+<!-- ==================================================================== -->
+<style is:global>
+  /* ---------- 变量 ---------- */
+  .snowi-page {
+    --bg-color: #f2f3f5;
+    --card-bg: #ffffff;
+    --text-main: #444444;
+    --text-sub: #888888;
+    --icon-color: #888888;
+    --btn-hover: rgba(0, 0, 0, 0.05);
+    --media-bg: #eeeeee;
+    --footer-bg: #fafafa;
+    --watermark-color: #999999;
+
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px 24px;
+    min-height: 100vh;
+    width: 100%;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  html.snowi-dark .snowi-page {
+    --bg-color: #121212;
+    --card-bg: #242426;
+    --text-main: #dcdcdc;
+    --text-sub: #aaaaaa;
+    --icon-color: #aaaaaa;
+    --btn-hover: rgba(255, 255, 255, 0.1);
+    --media-bg: #333333;
+    --footer-bg: #1e1e20;
+    --watermark-color: #666666;
+  }
+
+  .snowi-page,
+  .snowi-page *,
+  .snowi-page *::before,
+  .snowi-page *::after {
+    box-sizing: border-box;
+  }
+
+  .snowi-page * {
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  .snowi-page .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* ---------- 页首 ---------- */
+  .snowi-page .site-header {
+    width: 100%;
+    max-width: 440px;
+    margin-bottom: 20px;
+    padding: 0 4px;
+  }
+
+  .snowi-page .header-brand {
+    margin-bottom: 24px;
+  }
+
+  .snowi-page .site-title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--text-main);
+    margin: 0 0 8px;
+    line-height: 1.2;
+  }
+
+  .snowi-page .site-subtitle {
+    font-size: 14px;
+    color: var(--text-sub);
+    font-style: italic;
+    letter-spacing: 0.5px;
+    margin: 0;
+  }
+
+  .snowi-page .header-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .snowi-page .nav-item {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    line-height: 1.2;
+    color: var(--text-sub);
+    padding: 8px 18px;
+    border: none;
+    border-radius: 20px;
+    background-color: transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .snowi-page .nav-item:hover {
+    background-color: var(--btn-hover);
+    color: var(--text-main);
+  }
+
+  .snowi-page .nav-item.active {
+    background-color: var(--card-bg);
+    color: var(--text-main);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  html.snowi-dark .snowi-page .nav-item.active {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .snowi-page .header-search {
+    display: none;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .snowi-page .header-search.open {
+    display: flex;
+  }
+
+  .snowi-page .header-search input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background-color: var(--card-bg);
+    color: var(--text-main);
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-family: inherit;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  .snowi-page .header-search input::placeholder {
+    color: var(--text-sub);
+  }
+
+  .snowi-page .search-submit {
+    border: none;
+    cursor: pointer;
+    background-color: var(--card-bg);
+    color: var(--text-main);
+    padding: 10px 18px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  /* ---------- 主体布局 ---------- */
+  .snowi-page .page-layout {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .snowi-page .page-container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .snowi-page .card-wrapper {
+    padding: 12px 0;
+    width: 100%;
+  }
+
+  .snowi-page .post-card {
+    position: relative;
+    background-color: var(--card-bg);
+    width: 100%;
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+  }
+
+  /* ---------- 页面头部 ---------- */
+  .snowi-page .post-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .snowi-page .header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .snowi-page .date-top,
+  .snowi-page .date-bottom {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .snowi-page .day-num {
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--text-main);
+  }
+
+  .snowi-page .weekday {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+
+  .snowi-page .year-month,
+  .snowi-page .time {
+    font-size: 11px;
+    color: var(--text-sub);
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+
+  .snowi-page .header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .snowi-page .page-badge {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: var(--text-sub);
+    padding: 4px 10px;
+    border-radius: 10px;
+    background-color: var(--btn-hover);
+  }
+
+  /* ---------- 页面标题 ---------- */
+  .snowi-page .post-title {
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1.4;
+    color: var(--text-main);
+    letter-spacing: 0.3px;
+    margin: 0;
+    word-break: break-word;
+  }
+
+  .snowi-page .post-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* ---------- 正文 ---------- */
+  .snowi-page .post-content {
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--text-main);
+    word-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .snowi-page .post-content p {
+    margin: 0 0 12px;
+  }
+
+  .snowi-page .post-content p:last-child {
+    margin-bottom: 0;
+  }
+
+  .snowi-page .post-content a {
+    color: var(--text-main);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--text-sub);
+  }
+
+  .snowi-page .post-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 12px;
+    display: block;
+    margin: 12px 0;
+    background-color: var(--media-bg);
+  }
+
+  .snowi-page .post-content blockquote {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-left: 3px solid var(--text-sub);
+    background-color: var(--footer-bg);
+    border-radius: 0 10px 10px 0;
+    color: var(--text-sub);
+  }
+
+  .snowi-page .post-content ul,
+  .snowi-page .post-content ol {
+    margin: 10px 0;
+    padding-left: 22px;
+  }
+
+  .snowi-page .post-content li {
+    margin: 4px 0;
+  }
+
+  .snowi-page .post-content code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    background-color: var(--footer-bg);
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+
+  .snowi-page .post-content pre {
+    background-color: var(--footer-bg);
+    padding: 14px;
+    border-radius: 12px;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+
+  .snowi-page .post-content pre code {
+    background: none;
+    padding: 0;
+  }
+
+  .snowi-page .post-content hr {
+    border: none;
+    border-top: 1px solid var(--btn-hover);
+    margin: 18px 0;
+  }
+
+  .snowi-page .post-content h1,
+  .snowi-page .post-content h2,
+  .snowi-page .post-content h3,
+  .snowi-page .post-content h4 {
+    margin: 18px 0 10px;
+    line-height: 1.4;
+    color: var(--text-main);
+  }
+
+  .snowi-page .post-content h2 { font-size: 18px; }
+  .snowi-page .post-content h3 { font-size: 16px; }
+  .snowi-page .post-content h4 { font-size: 15px; }
+
+  .snowi-page .post-content mood-player {
+    position: relative;
+    z-index: 3;
+    display: block;
+    margin: 12px 0;
+  }
+
+  /* ---------- 密码表单 ---------- */
+  .snowi-page .post-password {
+    padding: 18px;
+    background-color: var(--footer-bg);
+    border-radius: 12px;
+  }
+
+  .snowi-page .post-password-tip {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--text-sub);
+  }
+
+  .snowi-page .post-password-form {
+    display: flex;
+    gap: 8px;
+  }
+
+  .snowi-page .post-password-form input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background-color: var(--card-bg);
+    color: var(--text-main);
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+
+  .snowi-page .post-password-form .submit {
+    border: none;
+    cursor: pointer;
+    background-color: var(--card-bg);
+    color: var(--text-main);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  /* ---------- 底部操作 ---------- */
+  .snowi-page .post-actions {
+    background-color: var(--footer-bg);
+    margin: 0 -16px -16px -16px;
+    padding: 8px 16px;
+    border-radius: 0 0 16px 16px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .snowi-page .action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--icon-color);
+    text-decoration: none;
+    font-family: inherit;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+
+  .snowi-page .action-btn:hover {
+    background-color: var(--btn-hover);
+    color: var(--text-main);
+  }
+
+  .snowi-page .action-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .snowi-page .action-count {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  /* ---------- 评论区 ---------- */
+  .snowi-page .comments-card {
+    gap: 14px;
+  }
+
+  .snowi-page .comments-title,
+  .snowi-page .respond-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text-main);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .snowi-page .comments-title::before,
+  .snowi-page .respond-title::before {
+    content: "";
+    display: inline-block;
+    width: 3px;
+    height: 13px;
+    border-radius: 2px;
+    background-color: var(--text-sub);
+    opacity: 0.6;
+  }
+
+  .snowi-page .comments-closed {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-sub);
+    margin: 0;
+  }
+
+  /* CommentList 容器 */
+  .snowi-page .comment-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .snowi-page .comment-list > li {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-main);
+    word-break: break-word;
+  }
+
+  .snowi-page .comment-list ol,
+  .snowi-page .comment-list ul {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0 0 0 14px;
+    border-left: 2px solid var(--btn-hover);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .snowi-page .comment-list img {
+    border-radius: 10px;
+    background-color: var(--media-bg);
+  }
+
+  .snowi-page .comment-list a {
+    color: var(--text-main);
+    text-decoration: none;
+    word-break: break-word;
+  }
+
+  .snowi-page .comment-list a:hover {
+    color: var(--text-sub);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .snowi-page .comment-list .comment-reply,
+  .snowi-page .comment-list .reply {
+    font-size: 12px;
+    color: var(--text-sub);
+  }
+
+  .snowi-page .comment-list .comment-time,
+  .snowi-page .comment-list time {
+    font-size: 11px;
+    color: var(--text-sub);
+    letter-spacing: 0.3px;
+  }
+
+  /* 评论分页 */
+  .snowi-page .comment-page-navigator {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 0;
+  }
+
+  .snowi-page .comment-page-navigator a,
+  .snowi-page .comment-page-navigator span {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 12px;
+    background-color: var(--btn-hover);
+    color: var(--text-sub);
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .snowi-page .comment-page-navigator a:hover {
+    color: var(--text-main);
+    background-color: var(--media-bg);
+  }
+
+  .snowi-page .comment-page-navigator span.current {
+    background-color: var(--text-main);
+    color: var(--card-bg);
+  }
+
+  /* ---------- 评论表单 ---------- */
+  .snowi-page .respond {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-top: 1px solid var(--btn-hover);
+    padding-top: 14px;
+  }
+
+  .snowi-page .cancel-comment-reply {
+    min-height: 0;
+  }
+
+  .snowi-page .cancel-comment-reply a {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-sub);
+    text-decoration: none;
+  }
+
+  .snowi-page .cancel-comment-reply a:hover {
+    color: var(--text-main);
+  }
+
+  .snowi-page .respond-identity {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-sub);
+    margin: 0;
+  }
+
+  .snowi-page .respond-identity a {
+    color: var(--text-main);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .snowi-page .logout-form {
+    display: inline;
+    margin: 0;
+  }
+
+  .snowi-page .logout-form button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text-sub);
+    transition: color 0.2s;
+  }
+
+  .snowi-page .logout-form button:hover {
+    color: var(--text-main);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .snowi-page .comment-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+  }
+
+  .snowi-page .comment-form .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .snowi-page .comment-form .form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+  }
+
+  .snowi-page .comment-form label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-sub);
+    letter-spacing: 0.3px;
+  }
+
+  .snowi-page .comment-form label.required::after {
+    content: " *";
+    color: #d9534f;
+  }
+
+  .snowi-page .comment-form input.text,
+  .snowi-page .comment-form textarea {
+    width: 100%;
+    border: none;
+    outline: none;
+    background-color: var(--footer-bg);
+    color: var(--text-main);
+    padding: 11px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.6;
+    resize: vertical;
+    transition: background-color 0.2s, box-shadow 0.2s;
+  }
+
+  .snowi-page .comment-form input.text:focus,
+  .snowi-page .comment-form textarea:focus {
+    box-shadow: 0 0 0 2px var(--btn-hover);
+  }
+
+  .snowi-page .comment-form input::placeholder,
+  .snowi-page .comment-form textarea::placeholder {
+    color: var(--text-sub);
+  }
+
+  .snowi-page .comment-form .form-submit {
+    margin: 0;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .snowi-page .comment-form .submit {
+    border: none;
+    cursor: pointer;
+    background-color: var(--text-main);
+    color: var(--card-bg);
+    padding: 10px 22px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    letter-spacing: 0.5px;
+    transition: opacity 0.2s;
+  }
+
+  .snowi-page .comment-form .submit:hover {
+    opacity: 0.85;
+  }
+
+  /* ---------- 水印（截图用） ---------- */
+  .snowi-page .snowi-watermark {
+    display: block;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--watermark-color);
+    margin-top: 16px;
+    letter-spacing: 1px;
+    padding-right: 15px;
+  }
+
+  /* ---------- 侧边栏 ---------- */
+  .snowi-page .sidebar-section {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  .snowi-page .widget {
+    background-color: var(--card-bg);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+  }
+
+  .snowi-page .widget-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-sub);
+    letter-spacing: 0.5px;
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .snowi-page .widget-title::before {
+    content: "";
+    display: inline-block;
+    width: 3px;
+    height: 12px;
+    border-radius: 2px;
+    background-color: var(--text-sub);
+    opacity: 0.6;
+  }
+
+  .snowi-page .widget-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .snowi-page .widget-list li {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-sub);
+    word-break: break-word;
+  }
+
+  .snowi-page .widget-list li a {
+    color: var(--text-main);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .snowi-page .widget-list li a:hover {
+    color: var(--text-sub);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .snowi-page .widget-comment-link {
+    display: block;
+    color: var(--text-sub) !important;
+    text-decoration: none;
+  }
+
+  .snowi-page .widget-comment-link:hover {
+    text-decoration: none !important;
+  }
+
+  .snowi-page .widget-comment-author {
+    color: var(--text-main);
+    font-weight: 600;
+    margin-right: 2px;
+  }
+
+  .snowi-page .widget-comment-excerpt {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    color: var(--text-sub);
+  }
+
+  .snowi-page .widget-tags {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .snowi-page .widget-tags li {
+    margin: 0;
+  }
+
+  .snowi-page .widget-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 14px;
+    background-color: var(--btn-hover);
+    color: var(--text-sub) !important;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none !important;
+  }
+
+  .snowi-page .widget-tag:hover {
+    color: var(--text-main) !important;
+    background-color: var(--media-bg);
+  }
+
+  .snowi-page .widget-tag-count {
+    font-size: 11px;
+    opacity: 0.7;
+  }
+
+  /* ---------- 页脚 ---------- */
+  .snowi-page .page-footer {
+    margin-top: 30px;
+    margin-bottom: 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    max-width: 440px;
+  }
+
+  .snowi-page .theme-toggle {
+    background-color: var(--card-bg);
+    border: none;
+    border-radius: 20px;
+    padding: 10px 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    color: var(--text-sub);
+    transition: all 0.2s;
+  }
+
+  .snowi-page .theme-toggle:hover {
+    color: var(--text-main);
+  }
+
+  .snowi-page .site-copyright {
+    font-size: 11px;
+    color: var(--text-sub);
+    margin: 0;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+
+  .snowi-page .site-copyright a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .snowi-page .site-copyright a:hover {
+    color: var(--text-main);
+  }
+
+  /* ---------- 桌面端 ---------- */
+  @media (min-width: 1024px) {
+    .snowi-page {
+      padding: 40px 24px 48px;
+    }
+
+    .snowi-page .site-header,
+    .snowi-page .page-footer {
+      max-width: 752px;
+    }
+
+    .snowi-page .page-layout {
+      max-width: 752px;
+      display: grid;
+      grid-template-columns: minmax(0, 440px) 280px;
+      column-gap: 32px;
+      row-gap: 0;
+      justify-content: center;
+      align-items: start;
+    }
+
+    .snowi-page .page-container {
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .snowi-page .sidebar-section {
+      grid-column: 2;
+      grid-row: 1;
+      margin-top: 0;
+      position: sticky;
+      top: 24px;
+      align-self: start;
+    }
+  }
+
+  /* ---------- 移动端 ---------- */
+  @media (max-width: 480px) {
+    .snowi-page {
+      padding: 16px 12px 20px;
+    }
+
+    .snowi-page .site-title {
+      font-size: 28px;
+    }
+
+    .snowi-page .post-title {
+      font-size: 18px;
+    }
+  }
+</style>
