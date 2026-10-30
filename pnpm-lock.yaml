@@ -62,6 +62,9 @@ importers:
       typecho-theme-note:
         specifier: file:src/themes/typecho-theme-note
         version: file:src/themes/typecho-theme-note
+      typecho-theme-one-diary:
+        specifier: file:src/themes/typecho-theme-one-diary
+        version: file:src/themes/typecho-theme-one-diary
     devDependencies:
       '@libsql/client':
         specifier: ^0.17.4
@@ -4977,7 +4980,10 @@ packages:
 
   typecho-theme-note@file:src/themes/typecho-theme-note:
     resolution: {directory: src/themes/typecho-theme-note, type: directory}
-
+    
+  typecho-theme-one-diary@file:src/themes/typecho-theme-one-diary:
+    resolution: {directory: src/themes/typecho-theme-one-diary, type: directory}
+    
   typed-array-buffer@1.0.3:
     resolution: {integrity: sha512-nAYYwfY3qnzX30IkA6AQZjVbtK6duGontcQm1WSG1MD94YLqK0515GNApXkoxKOWMusVssAHWLh9SeaoefYFGw==}
     engines: {node: '>= 0.4'}
@@ -10363,7 +10369,9 @@ snapshots:
   typecho-theme-minimal@file:src/themes/typecho-theme-minimal: {}
 
   typecho-theme-note@file:src/themes/typecho-theme-note: {}
-
+  
+  typecho-theme-one-diary@file:src/themes/typecho-theme-one-diary: {}
+  
   typed-array-buffer@1.0.3:
     dependencies:
       call-bound: 1.0.4
