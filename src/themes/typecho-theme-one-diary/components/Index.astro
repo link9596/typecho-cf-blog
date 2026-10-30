@@ -1,7 +1,6 @@
 ---
 /**
  * Snowi theme — Index (home page)
- * 严格复刻原版 440px 单列居中极简日记流
  */
 import Base from '@/layouts/Base.astro';
 import type { ThemeIndexProps } from '@/lib/theme-props';
@@ -21,14 +20,13 @@ const normalizePath = (p: string) => (p || '').replace(/\/+$/, '') || '/';
 const isPageActive = (slug: string) =>
   normalizePath(currentPath) === normalizePath(`/${slug}`);
 
-/* 侧边栏数据 */
 const recentPosts = sidebarData?.recentPosts ?? [];
 const recentComments = sidebarData?.recentComments ?? [];
 const sidebarCategories = sidebarData?.categories ?? [];
 const archives = sidebarData?.archives ?? [];
 const hasSidebar = recentPosts.length > 0 || recentComments.length > 0 || sidebarCategories.length > 0 || archives.length > 0;
 
-/* 日期拆解（修复：保证周几一定返回） */
+/* 日期拆解 */
 type DateParts = { day: string; weekday: string; yearMonth: string; time: string };
 function getDateParts(ts: number, tz?: string): DateParts {
   const date = new Date(ts * 1000);
@@ -44,7 +42,6 @@ function getDateParts(ts: number, tz?: string): DateParts {
     let hour = pick('hour');
     if (hour === '24') hour = '00';
     
-    // 单独提取星期，兼容 SSR
     const weekdayFmt = new Intl.DateTimeFormat('zh-CN', { timeZone: tz || undefined, weekday: 'short' });
     let weekday = weekdayFmt.format(date).replace('星期', '周').replace('周天', '周日').replace('星期日', '周日');
     
@@ -105,7 +102,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 }
 ---
 
-<!-- 提前应用暗色主题 -->
 <script is:inline>
   try {
     if (localStorage.getItem('theme') === 'dark') {
@@ -117,7 +113,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 <Base options={options} urls={urls} user={user} isLoggedIn={isLoggedIn} pluginCtx={pluginCtx}>
   <div class="snowi-page">
     
-    <!-- 页首区 -->
     <header class="site-header">
       <div class="header-brand">
         <h1 class="site-title">{options.title}</h1>
@@ -131,14 +126,12 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
         <a href="#" class="nav-item" id="snowiSearchToggle">搜索</a>
       </nav>
       
-      <!-- 隐藏的搜索框 -->
       <form class="header-search" id="snowiSearch" method="post" action={urls.siteUrl + '/'} role="search">
         <input type="text" name="s" placeholder="输入关键字搜索" autocomplete="off" />
         <button type="submit">搜索</button>
       </form>
     </header>
 
-    <!-- 卡片列表区 -->
     <div class="cards-container">
       {processedPosts.length === 0 ? (
         <div class="card-wrapper">
@@ -152,7 +145,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
             <article class="post-card" itemscope itemtype="http://schema.org/BlogPosting">
               <a href={post.permalink} class="card-overlay" aria-label={post.title}></a>
 
-              <!-- 头部 -->
               <header class="post-header">
                 <div class="header-left">
                   <div class="date-top">
@@ -172,12 +164,10 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
                 </div>
               </header>
 
-              <!-- 正文 -->
               {post.excerpt && (
                 <div class="post-text" itemprop="articleBody" set:html={post.excerpt} />
               )}
 
-              <!-- 媒体：单图 -->
               {post.mediaItems.length === 1 && post.mediaItems[0].type === 'image' && (
                 <div class="post-images post-media" data-count="1">
                   <img src={post.mediaItems[0].src} alt="配图" loading="lazy" class="lightbox-img" />
@@ -187,7 +177,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
                 <div class="post-images post-media" data-count="1" set:html={post.mediaItems[0].html} />
               )}
 
-              <!-- 媒体：多图网格 -->
               {post.mediaItems.length > 1 && (
                 <div class="post-images post-media-grid" data-count={post.mediaItems.length}>
                   {post.mediaItems.map((item) =>
@@ -200,7 +189,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
                 </div>
               )}
 
-              <!-- 分类 -->
               {post.categories.length > 0 && (
                 <div class="post-category">
                   <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
@@ -212,7 +200,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
                 </div>
               )}
 
-              <!-- 底部操作区 -->
               <footer class="post-actions">
                 <a class="action-btn" href={`${post.permalink}#comments`} aria-label="评论">
                   <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
@@ -227,7 +214,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
       )}
     </div>
 
-    <!-- 分页 -->
     {pagination.totalPages > 1 && (
       <nav class="page-navigator">
         {pagination.hasPrev && <a class="prev" href={pagination.prevUrl!}>&laquo; 前一页</a>}
@@ -235,7 +221,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
       </nav>
     )}
 
-    <!-- 侧边栏（在手机版通过 CSS 直接隐藏） -->
     {hasSidebar && (
       <aside class="sidebar-section">
         {recentPosts.length > 0 && (
@@ -296,7 +281,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
       </aside>
     )}
 
-    <!-- 页脚 -->
     <footer class="page-footer">
       <button class="theme-toggle" id="themeToggle">
         <span id="themeIcon">🌙</span>
@@ -309,7 +293,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   <GlobalPlayer />
 </Base>
 
-<!-- 交互脚本 -->
 <script is:inline define:vars={{ siteTitle: options.title }}>
   (function () {
     var root = document.documentElement;
@@ -322,7 +305,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
        }
     }
 
-    /* ---------------- 主题切换 ---------------- */
     var themeToggle = document.getElementById('themeToggle');
     var themeIcon = document.getElementById('themeIcon');
     var themeText = document.getElementById('themeText');
@@ -349,7 +331,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
       });
     }
 
-    /* ---------------- 搜索框切换 ---------------- */
     var searchToggle = document.getElementById('snowiSearchToggle');
     var searchForm = document.getElementById('snowiSearch');
     if (searchToggle && searchForm) {
@@ -360,7 +341,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
       });
     }
 
-    /* ---------------- 高清截图 ---------------- */
     var shareBtns = document.querySelectorAll('.share-btn');
     var loadingIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;animation:spin 1s linear infinite;"><style>@keyframes spin{100%{transform:rotate(360deg)}}</style><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9"></path></svg>`;
     var CAPTURE_PADDING = '16px 12px 20px';
@@ -489,11 +469,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   })();
 </script>
 
-<!-- ==================================================================== -->
-<!-- 样式 -->
-<!-- ==================================================================== -->
 <style is:global>
-  /* 消除白边 */
   html, body {
     margin: 0; padding: 0; width: 100%; overflow-x: hidden;
     background-color: #f2f3f5;
@@ -543,7 +519,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     transition: background-color 0.3s ease, color 0.3s ease;
   }
 
-  /* 页首区 */
   .snowi-page .site-header {
     width: 100%; max-width: 440px; margin-bottom: 20px; padding: 0 4px;
   }
@@ -581,7 +556,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
 
-  /* 卡片列表区 */
   .snowi-page .cards-container {
     width: 100%; max-width: 440px;
     display: flex; flex-direction: column; gap: 8px; 
@@ -590,7 +564,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     padding: 12px 0; width: 100%;
   }
 
-  /* 卡片主体 */
   .snowi-page .post-card {
     position: relative;
     background-color: var(--card-bg);
@@ -608,7 +581,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     position: absolute; inset: 0; z-index: 1; display: block; border-radius: 16px;
   }
 
-  /* 头部 */
   .snowi-page .post-header {
     position: relative; z-index: 2;
     display: flex; justify-content: space-between; align-items: flex-start;
@@ -626,7 +598,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     width: 32px; height: 32px; border-radius: 10px; object-fit: cover; background-color: var(--media-bg);
   }
 
-  /* 正文 */
   .snowi-page .post-text {
     position: relative; z-index: 2;
     font-size: 14px; line-height: 1.75; color: var(--text-main); word-wrap: break-word;
@@ -634,7 +605,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   .snowi-page .post-text p { margin-bottom: 10px; }
   .snowi-page .post-text p:last-child { margin-bottom: 0; }
 
-  /* 图片区 */
   .snowi-page .post-media {
     position: relative; z-index: 2;
     width: 100%; border-radius: 12px; overflow: hidden; background-color: var(--media-bg);
@@ -642,7 +612,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   .snowi-page .post-media img { width: 100%; height: auto; display: block; object-fit: cover; max-height: 400px; }
   .snowi-page .post-media .live-photo { width: 100%; background-color: var(--media-bg); }
 
-  /* 双图/三图网格 */
   .snowi-page .post-media-grid {
     position: relative; z-index: 2;
     display: grid; gap: 4px; border-radius: 12px; overflow: hidden; background-color: transparent;
@@ -669,7 +638,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   .snowi-page .media-cell { position: relative; overflow: hidden; background-color: var(--media-bg); }
   .snowi-page .media-cell .live-photo { width: 100%; height: 100%; }
 
-  /* 分类 */
   .snowi-page .post-category {
     position: relative; z-index: 2;
     display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-sub); margin-top: 4px;
@@ -678,7 +646,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   .snowi-page .post-category a { text-decoration: none; color: inherit; }
   .snowi-page .post-category a:hover { color: var(--text-main); }
 
-  /* 底部操作区（更紧凑的高度） */
+  /* === 极限压缩底部操作栏高度 === */
   .snowi-page .post-actions {
     position: relative; 
     z-index: 2;
@@ -688,30 +656,31 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     margin-right: -16px !important;
     margin-bottom: -16px !important;
     margin-top: 4px;
-    padding: 1px 16px; /* 高度减小 */
+    /* 强制锁定高度，去除多余 padding */
+    height: 38px !important;
+    padding: 0 16px !important; 
     border-radius: 0 0 16px 16px; 
     display: flex !important; 
     justify-content: flex-end !important; 
     align-items: center; 
-    gap: 4px; /* 图标间距变小 */
+    gap: 4px; 
     align-self: stretch;
   }
 
   .snowi-page .action-btn {
-    background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 6px; 
+    background: none; border: none; cursor: pointer; padding: 0 !important; 
+    width: 28px; height: 28px; /* 固定按钮热区 */
     display: flex; align-items: center; justify-content: center; color: var(--icon-color); transition: all 0.2s;
-    text-decoration: none;
+    text-decoration: none; border-radius: 6px;
   }
   .snowi-page .action-btn:hover { background-color: var(--btn-hover); color: var(--text-main); }
   .snowi-page .action-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-  /* 水印 */
   .snowi-page .snowi-watermark {
     display: block; text-align: right; font-size: 11px; font-weight: 700; 
     color: var(--watermark-color); margin-top: 16px; letter-spacing: 1px; padding-right: 15px; 
   }
 
-  /* 分页 */
   .snowi-page .page-navigator {
     display: flex; justify-content: center; align-items: center; gap: 12px;
     margin: 20px 0 10px; width: 100%; max-width: 440px;
@@ -723,16 +692,13 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   }
   .snowi-page .page-navigator a:hover { color: var(--text-main); }
 
-  /* 侧边栏：仅在 PC 大屏显示（手机端直接隐藏） */
   .snowi-page .sidebar-section {
     display: none;
     width: 100%; max-width: 440px; margin-top: 24px; flex-direction: column; gap: 16px;
   }
 
   @media (min-width: 860px) {
-    .snowi-page .sidebar-section {
-      display: flex;
-    }
+    .snowi-page .sidebar-section { display: flex; }
   }
 
   .snowi-page .widget {
@@ -754,7 +720,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   .snowi-page .logout-btn { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--text-sub); padding: 0; }
   .snowi-page .logout-btn:hover { color: var(--text-main); }
 
-  /* 页脚控制区 */
   .snowi-page .page-footer {
     margin-top: 30px; margin-bottom: 40px; display: flex; justify-content: center; align-items: center;
   }
