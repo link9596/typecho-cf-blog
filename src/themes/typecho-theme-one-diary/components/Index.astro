@@ -341,126 +341,81 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
       });
     }
 
+    /* ================= 全新截图机制 (html-to-image) ================= */
     var shareBtns = document.querySelectorAll('.share-btn');
-    var loadingIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;animation:spin 1s linear infinite;"><style>@keyframes spin{100%{transform:rotate(360deg)}}</style><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9"></path></svg>`;
-    var CAPTURE_PADDING = '16px 12px 20px';
-
-    function waitImageReady(img) {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise(resolve => {
-        const done = () => resolve();
-        img.addEventListener('load', done, { once: true });
-        img.addEventListener('error', done, { once: true });
-        setTimeout(done, 6000);
+    
+    // 动态加载强大的 html-to-image 库（完全避免跨域和 CSS 解析崩溃）
+    function loadHtmlToImage() {
+      if (window.htmlToImage) return Promise.resolve(window.htmlToImage);
+      if (window.__h2i_promise) return window.__h2i_promise;
+      
+      window.__h2i_promise = new Promise((resolve, reject) => {
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.11/html-to-image.min.js';
+        s.onload = function () { resolve(window.htmlToImage); };
+        s.onerror = function () { reject(new Error('无法加载截图引擎，请检查网络')); };
+        document.head.appendChild(s);
       });
-    }
-
-    function createCoverDataURL(img, targetW, targetH, pixelRatio) {
-      const cw = Math.max(1, Math.round(targetW * pixelRatio));
-      const ch = Math.max(1, Math.round(targetH * pixelRatio));
-      const canvas = document.createElement('canvas');
-      canvas.width = cw;
-      canvas.height = ch;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      const iw = img.naturalWidth, ih = img.naturalHeight;
-      if (!iw || !ih) return null;
-      const targetRatio = cw / ch, srcRatio = iw / ih;
-      let sx = 0, sy = 0, sw = iw, sh = ih;
-      if (srcRatio > targetRatio) { sw = ih * targetRatio; sx = (iw - sw) / 2; } 
-      else { sh = iw / targetRatio; sy = (ih - sh) / 2; }
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
-      try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
-    }
-
-    async function snapshotCardImages(wrapper, pixelRatio) {
-      const imgs = Array.from(wrapper.querySelectorAll('img'));
-      if (imgs.length === 0) return [];
-      await Promise.all(imgs.map(waitImageReady));
-      const origPadding = wrapper.style.padding;
-      wrapper.style.padding = CAPTURE_PADDING;
-      void wrapper.offsetWidth;
-      const snapshots = imgs.map(img => {
-        const rect = img.getBoundingClientRect();
-        const w = Math.max(1, Math.round(rect.width));
-        const h = Math.max(1, Math.round(rect.height));
-        return { w, h, dataURL: createCoverDataURL(img, w, h, pixelRatio) };
-      });
-      wrapper.style.padding = origPadding;
-      return snapshots;
+      return window.__h2i_promise;
     }
 
     shareBtns.forEach(btn => {
       btn.addEventListener('click', async function () {
         if (this.disabled) return;
+        
         const currentWrapper = this.closest('.card-wrapper');
         const originalHTML = this.innerHTML;
-        const computedColor = window.getComputedStyle(this).color;
-
-        this.innerHTML = loadingIconHTML;
+        
+        // 将按钮改为文字提示，避免动画 SVG 影响渲染
+        this.innerHTML = '<span style="font-size:12px;color:var(--text-sub)">生成中…</span>';
         this.disabled = true;
 
         try {
-          const highResScale = (window.devicePixelRatio || 1) * 1.2;
-          const currentBg = getComputedStyle(pageEl).getPropertyValue('--bg-color').trim() || '#f2f3f5';
-          const snapshots = await snapshotCardImages(currentWrapper, highResScale);
+          const h2i = await loadHtmlToImage();
+          
+          // 获取当前主题背景色
+          const computedStyle = getComputedStyle(pageEl);
+          const bgColor = computedStyle.getPropertyValue('--bg-color').trim() || '#f2f3f5';
 
-          const canvas = await html2canvas(currentWrapper, {
-            useCORS: true,
-            allowTaint: false,
-            backgroundColor: currentBg,
-            scale: highResScale,
-            dpi: 300,
-            logging: false,
-            ignoreElements: (el) => el.tagName === 'MOOD-PLAYER' || el.tagName === 'VIDEO',
-            onclone: (clonedDoc, element) => {
-              element.style.padding = CAPTURE_PADDING;
-              
-              element.style.setProperty('--bg-color', currentBg);
-              element.style.setProperty('--card-bg', getComputedStyle(pageEl).getPropertyValue('--card-bg').trim());
-              element.style.setProperty('--text-main', getComputedStyle(pageEl).getPropertyValue('--text-main').trim());
-              element.style.setProperty('--text-sub', getComputedStyle(pageEl).getPropertyValue('--text-sub').trim());
-              element.style.setProperty('--footer-bg', getComputedStyle(pageEl).getPropertyValue('--footer-bg').trim());
-              element.style.setProperty('--watermark-color', getComputedStyle(pageEl).getPropertyValue('--watermark-color').trim());
+          // 临时补足底部空间，防止水印贴边被裁切
+          const origPaddingBottom = currentWrapper.style.paddingBottom;
+          currentWrapper.style.paddingBottom = '20px';
+          
+          // 动态注入水印
+          const watermark = document.createElement('div');
+          watermark.className = 'snowi-watermark';
+          watermark.innerText = '❄️ ' + siteTitle + '.';
+          currentWrapper.appendChild(watermark);
 
-              const allSvgs = element.querySelectorAll('svg');
-              allSvgs.forEach(svg => svg.style.display = 'none');
-
-              const watermark = clonedDoc.createElement('div');
-              watermark.className = 'snowi-watermark';
-              watermark.innerText = '❄️ ' + siteTitle + '.';
-              element.appendChild(watermark);
-
-              const clonedBtn = element.querySelector('.share-btn');
-              if (clonedBtn) {
-                clonedBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:${computedColor};stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>`;
-                clonedBtn.style.display = 'flex';
+          // 调用 html-to-image 渲染为 PNG
+          const dataUrl = await h2i.toPng(currentWrapper, {
+            pixelRatio: 2, // 2倍高清
+            backgroundColor: bgColor,
+            cacheBust: true, // 解决图片缓存和跨域问题
+            filter: function (node) {
+              // 忽略无法渲染的视频和播放器组件
+              if (node.tagName === 'VIDEO' || node.tagName === 'MOOD-PLAYER') {
+                return false;
               }
-
-              const clonedImgs = element.querySelectorAll('img');
-              clonedImgs.forEach((img, index) => {
-                const snap = snapshots[index];
-                if (!snap) return;
-                if (snap.dataURL) img.setAttribute('src', snap.dataURL);
-                img.style.width = snap.w + 'px';
-                img.style.height = snap.h + 'px';
-                img.style.maxWidth = 'none';
-                img.style.maxHeight = 'none';
-                img.style.objectFit = 'fill';
-              });
+              return true;
             }
           });
 
+          // 恢复现场
+          currentWrapper.removeChild(watermark);
+          currentWrapper.style.paddingBottom = origPaddingBottom;
+
+          // 触发下载
           const link = document.createElement('a');
           link.download = 'Snowi-' + Date.now() + '.png';
-          link.href = canvas.toDataURL('image/png');
+          link.href = dataUrl;
           link.click();
+
         } catch (err) {
           console.error('截图失败:', err);
-          alert('截图生成失败，可能是组件兼容性问题。');
+          alert('截图生成失败：' + (err.message || '请检查浏览器是否支持。'));
         } finally {
+          // 恢复按钮图标
           this.innerHTML = originalHTML;
           this.disabled = false;
         }
@@ -656,7 +611,6 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     margin-right: -16px !important;
     margin-bottom: -16px !important;
     margin-top: 4px;
-    /* 强制锁定高度，去除多余 padding */
     height: 38px !important;
     padding: 0 16px !important; 
     border-radius: 0 0 16px 16px; 
@@ -669,7 +623,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 
   .snowi-page .action-btn {
     background: none; border: none; cursor: pointer; padding: 0 !important; 
-    width: 28px; height: 28px; /* 固定按钮热区 */
+    width: 28px; height: 28px;
     display: flex; align-items: center; justify-content: center; color: var(--icon-color); transition: all 0.2s;
     text-decoration: none; border-radius: 6px;
   }
