@@ -1,0 +1,19 @@
+{
+  "name": "typecho-theme-one-diary",
+  "version": "1.0.0",
+  "description": "Typecho-CF日记向主题",
+  "author": "Link",
+  "license": "GPL-2.0",
+  "keywords": [
+    "typecho",
+    "theme",
+    "note"
+  ],
+  "files": [
+    "theme.json",
+    "normalize.css",
+    "grid.css",
+    "style.css",
+    "components/"
+  ]
+}
