@@ -47,7 +47,8 @@
     "typecho-plugin-webdav": "file:src/plugins/typecho-plugin-webdav",
     "typecho-plugin-wechat-publisher": "file:src/plugins/typecho-plugin-wechat-publisher",
     "typecho-theme-minimal": "file:src/themes/typecho-theme-minimal",
-    "typecho-theme-note": "file:src/themes/typecho-theme-note"
+    "typecho-theme-note": "file:src/themes/typecho-theme-note",
+    "typecho-theme-one-diary": "file:src/themes/typecho-theme-one-diary"
   },
   "devDependencies": {
     "@libsql/client": "^0.17.4",
