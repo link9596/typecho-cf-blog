@@ -178,7 +178,7 @@ const { siteTitle = '' } = Astro.props;
 
     /*
      * 截图前的图片预处理：
-     * 使用 Canvas 将图片转为 Base64，彻底杜绝 html-to-image 因 CORS 或缓存导致的空白。
+     * 关键修复：给图片 URL 加上时间戳，强制绕过浏览器的“无 CORS 头”脏缓存！
      */
     async function prepareCardImages(wrapper) {
       var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
@@ -207,6 +207,9 @@ const { siteTitle = '' } = Astro.props;
           var image = new Image();
           image.crossOrigin = 'anonymous'; // 强制走 CORS 请求
           
+          // ⚠️ 核心修复点：加入时间戳，强制浏览器重新向 R2 服务器请求，不带这个时间戳就会命中脏缓存导致画布污染
+          var cacheBustUrl = src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_t=' + Date.now();
+          
           var timer = setTimeout(function() { 
             console.warn('[snowi] 图片加载超时:', src);
             resolve(); 
@@ -233,11 +236,11 @@ const { siteTitle = '' } = Astro.props;
           
           image.onerror = function () {
             clearTimeout(timer);
-            console.warn('[snowi] 图片跨域加载失败:', src);
+            console.warn('[snowi] 图片跨域加载失败:', cacheBustUrl);
             resolve(); // 失败也继续，不要卡死整体流程
           };
           
-          image.src = src;
+          image.src = cacheBustUrl;
         }));
       });
 
@@ -307,13 +310,13 @@ const { siteTitle = '' } = Astro.props;
       var restoreImages = function () {};
 
       try {
-        // ★ 关键：用 await 等待所有图片转换完 Base64 再进行截图
+        // 等待所有图片转换完毕
         restoreImages = await prepareCardImages(wrapper);
 
         var captureOptions = {
           backgroundColor: currentBg,
           pixelRatio: highResScale,
-          cacheBust: false, // 已经是 Base64 了，不需要强制绕过缓存
+          cacheBust: false, // 图片已经被替换为 Base64，无需开启
           skipFonts: true,
           imagePlaceholder: TRANSPARENT_PIXEL,
           filter: function (node) {
@@ -338,7 +341,6 @@ const { siteTitle = '' } = Astro.props;
               var tag = node.tagName;
               var isHeavy = node.nodeType === 1 && node.classList &&
                 (node.classList.contains('live-photo-badge') || node.classList.contains('player-placeholder'));
-              // ⚠️ 关键修复：去掉了 tag !== 'IMG' 和 tag !== 'SVG'，确保回退时依然保留图片
               return !isHeavy && tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' &&
                 tag !== 'IFRAME' && tag !== 'OBJECT' && tag !== 'EMBED' && tag !== 'CANVAS' && tag !== 'AUDIO';
             },
