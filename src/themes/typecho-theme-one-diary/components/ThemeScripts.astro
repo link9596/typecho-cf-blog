@@ -177,131 +177,41 @@ const { siteTitle = '' } = Astro.props;
     }
 
     /*
-     * 用 fetch 主动获取图片并转 DataURL。
-     * 关键点：
-     *   - mode: 'cors'      → 跨域时显式走 CORS 流程
-     *   - credentials: 'same-origin' → 跨域不发送 cookie，避免被 CDN 的 * 通配拒绝
-     *   - cache: 'reload'   → 强制绕过可能被"污染"的缓存副本
-     *                          （页面里普通 <img> 先加载时缓存的是不带 CORS 头的响应，
-     *                           后续 crossOrigin 请求会命中缓存导致失败，这是最常见的坑）
+     * 截图前的预处理：
+     * 1. 移除 loading="lazy" 强制解码。
+     * 2. 强制添加 crossorigin="anonymous" 属性。
+     * 无需手动转换 DataURL，html-to-image 能自动处理跨域。
      */
-    function loadImageAsDataURL(src) {
-      return fetch(src, {
-        mode: 'cors',
-        credentials: 'same-origin',
-        cache: 'reload',
-      })
-        .then(function (res) {
-          if (!res.ok) throw new Error('http ' + res.status);
-          return res.blob();
-        })
-        .then(function (blob) {
-          return new Promise(function (resolve, reject) {
-            var reader = new FileReader();
-            reader.onload = function () { resolve(String(reader.result)); };
-            reader.onerror = function () { reject(reader.error || new Error('read failed')); };
-            reader.readAsDataURL(blob);
-          });
-        });
-    }
-
-    /*
-     * 降级方案：某些 CDN 拒绝 fetch（或没设 Access-Control-Allow-Origin 允许 GET），
-     * 但浏览器 <img crossOrigin> 却能拿到可绘制副本。这里保留原来的 canvas 探测逻辑。
-     */
-    function probeImageAsDataURL(src) {
-      return new Promise(function (resolve, reject) {
-        var probe = new Image();
-        probe.crossOrigin = 'anonymous';
-        probe.onload = function () {
-          try {
-            var canvas = document.createElement('canvas');
-            canvas.width = probe.naturalWidth || 1;
-            canvas.height = probe.naturalHeight || 1;
-            var ctx = canvas.getContext('2d');
-            if (!ctx) return reject(new Error('no 2d context'));
-            ctx.drawImage(probe, 0, 0);
-            resolve(canvas.toDataURL('image/png'));
-          } catch (e) {
-            reject(e);
-          }
-        };
-        probe.onerror = function () { reject(new Error('probe load failed')); };
-        probe.src = src;
-      });
-    }
-
-    /*
-     * html-to-image 会把图片重新 fetch 后内联。头像等跨域图片如果没有 CORS，
-     * 可能让 canvas 变脏并导致 toPng 直接失败。这里先把卡片里的图片转成
-     * 同源 data URL；确实拿不到 CORS 的图片用透明占位，保证截图能生成。
-     *
-     * 同时处理懒加载：截图前移除 loading="lazy"，避免图片还没解码就绘制，
-     * 截图结束后再恢复，保证原页面状态不受影响。
-     */
-    function inlineCardImages(wrapper) {
+    function prepareCardImages(wrapper) {
       var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
       var restores = [];
 
-      return Promise.all(imgs.map(function (img) {
+      imgs.forEach(function (img) {
         var src = img.getAttribute('src') || '';
-        if (!src || /^(data:|blob:)/i.test(src)) return Promise.resolve();
+        if (!src || /^(data:|blob:)/i.test(src)) return;
 
         var original = {
           img: img,
-          src: src,
-          srcset: img.getAttribute('srcset'),
-          sizes: img.getAttribute('sizes'),
           crossorigin: img.getAttribute('crossorigin'),
           loading: img.getAttribute('loading'),
         };
 
-        return new Promise(function (resolve) {
-          var settled = false;
-          var timer = null;
-
-          function done(replacement) {
-            if (settled) return;
-            settled = true;
-            if (timer) clearTimeout(timer);
-            restores.push(original);
-            img.removeAttribute('loading');
-            img.removeAttribute('srcset');
-            img.removeAttribute('sizes');
-            img.setAttribute('src', replacement || TRANSPARENT_PIXEL);
-            resolve();
-          }
-
-          function fallback() {
-            probeImageAsDataURL(src)
-              .then(function (dataUrl) { done(dataUrl); })
-              .catch(function () { done(null); });
-          }
-
-          timer = setTimeout(function () { done(null); }, 8000);
-
-          loadImageAsDataURL(src)
-            .then(function (dataUrl) { done(dataUrl); })
-            .catch(function (err) {
-              console.warn('[snowi] 图片内联失败，尝试降级:', src, err);
-              fallback();
-            });
-        });
-      })).then(function () {
-        return function restore() {
-          restores.forEach(function (item) {
-            item.img.setAttribute('src', item.src);
-            if (item.srcset) item.img.setAttribute('srcset', item.srcset);
-            else item.img.removeAttribute('srcset');
-            if (item.sizes) item.img.setAttribute('sizes', item.sizes);
-            else item.img.removeAttribute('sizes');
-            if (item.crossorigin !== null) item.img.setAttribute('crossorigin', item.crossorigin);
-            else item.img.removeAttribute('crossorigin');
-            if (item.loading) item.img.setAttribute('loading', item.loading);
-            else item.img.removeAttribute('loading');
-          });
-        };
+        // 移除懒加载，添加跨域属性
+        img.removeAttribute('loading');
+        img.setAttribute('crossorigin', 'anonymous');
+        
+        restores.push(original);
       });
+
+      return function restore() {
+        restores.forEach(function (item) {
+          if (item.crossorigin !== null) item.img.setAttribute('crossorigin', item.crossorigin);
+          else item.img.removeAttribute('crossorigin');
+          
+          if (item.loading) item.img.setAttribute('loading', item.loading);
+          else item.img.removeAttribute('loading');
+        });
+      };
     }
 
     async function handleShare(btn) {
@@ -348,15 +258,13 @@ const { siteTitle = '' } = Astro.props;
       watermark.textContent = '❄️ ' + siteTitle + '.';
       wrapper.appendChild(watermark);
 
-      var restoreImages = function () {};
+      var restoreImages = prepareCardImages(wrapper);
 
       try {
-        restoreImages = await inlineCardImages(wrapper);
-
         var captureOptions = {
           backgroundColor: currentBg,
           pixelRatio: highResScale,
-          cacheBust: false,
+          cacheBust: true, // 关键：强制绕过缓存，避免读取到旧的未带 CORS 头的缓存响应
           skipFonts: true,
           imagePlaceholder: TRANSPARENT_PIXEL,
           filter: function (node) {
@@ -374,7 +282,7 @@ const { siteTitle = '' } = Astro.props;
           dataUrl = await window.htmlToImage.toPng(wrapper, {
             backgroundColor: currentBg,
             pixelRatio: 1,
-            cacheBust: false,
+            cacheBust: true,
             skipFonts: true,
             imagePlaceholder: TRANSPARENT_PIXEL,
             filter: function (node) {
