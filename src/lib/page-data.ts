@@ -102,6 +102,20 @@ function getPage(locals: Record<string, unknown>, url: URL): number {
   return raw ? (typeof raw === 'number' ? raw : parseInt(raw, 10) || 1) : 1;
 }
 
+function plainCommentExcerpt(html: string, max = 80): string {
+  const text = html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > max ? `${text.slice(0, max).trim()}…` : text;
+}
+
 function buildCommentTree(allComments: CommentRow[], options: SiteOptions): CommentNode[] {
   const map = new Map<number, CommentNode>();
   const roots: CommentNode[] = [];
@@ -124,8 +138,14 @@ function buildCommentTree(allComments: CommentRow[], options: SiteOptions): Comm
   }
   for (const c of allComments) {
     const node = map.get(c.coid)!;
-    if (c.parent && map.has(c.parent)) {
-      map.get(c.parent)!.children.push(node);
+    const parentNode = c.parent ? map.get(c.parent) : undefined;
+    if (parentNode) {
+      node.replyTo = {
+        coid: parentNode.coid,
+        author: parentNode.author,
+        excerpt: plainCommentExcerpt(parentNode.text),
+      };
+      parentNode.children.push(node);
     } else {
       roots.push(node);
     }

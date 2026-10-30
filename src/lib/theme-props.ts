@@ -127,6 +127,12 @@ export interface CommentNode {
   text: string;
   created: number;
   children: CommentNode[];
+  /** 父评论上下文（仅回复评论有） */
+  replyTo?: {
+    coid: number;
+    author: string;
+    excerpt: string;
+  };
 }
 
 export interface CommentOptions {
