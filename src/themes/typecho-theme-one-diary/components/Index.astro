@@ -1,7 +1,7 @@
 ---
 /**
- * Snowi theme — Index (home page) component
- * 极简日记流 · 卡片布局 + 响应式侧边栏
+ * Snowi theme — Index (home page)
+ * 严格复刻原版 440px 单列居中极简日记流
  */
 import Base from '@/layouts/Base.astro';
 import type { ThemeIndexProps } from '@/lib/theme-props';
@@ -49,7 +49,7 @@ function getDateParts(ts: number, tz?: string): DateParts {
   }
 }
 
-/* 文章预处理 */
+/* 文章预处理：提取图片、LivePhoto，剥离为纯文本摘要 */
 type MediaItem = { type: 'image' | 'livephoto'; html: string; src?: string; videoSrc?: string };
 function processPost(post: any) {
   let excerpt = post.excerpt || '';
@@ -94,10 +94,10 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 }
 ---
 
-<!-- 提前应用暗色主题，防闪烁 -->
+<!-- 提前应用暗色主题 -->
 <script is:inline>
   try {
-    if (localStorage.getItem('snowi-theme') === 'dark') {
+    if (localStorage.getItem('theme') === 'dark') {
       document.documentElement.classList.add('snowi-dark');
     }
   } catch (e) {}
@@ -105,206 +105,193 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 
 <Base options={options} urls={urls} user={user} isLoggedIn={isLoggedIn} pluginCtx={pluginCtx}>
   <div class="snowi-page">
-    <div class="layout-wrapper">
-      
-      <!-- ================= 顶部 Header ================= -->
-      <header class="site-header">
-        <div class="header-top-row">
-          <div class="site-branding">
-            <div class="site-title">{options.title}</div>
-            {options.description && <div class="site-desc">{options.description}</div>}
-          </div>
-          
-          <form class="search-box" method="post" action={urls.siteUrl + '/'} role="search">
-            <input type="text" name="s" placeholder="输入关键字搜索" autocomplete="off" />
-            <button type="submit" aria-label="搜索">
-              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            </button>
-          </form>
-        </div>
-
-        <nav class="site-nav">
-          <a href={urls.siteUrl + '/'} class:list={[{ active: isIndex }]}>首页</a>
-          {pages.map((page) => (
-            <a href={page.permalink} class:list={[{ active: isPageActive(page.slug) }]}>{page.title}</a>
-          ))}
-        </nav>
-      </header>
-
-      <!-- ================= 主体内容区 ================= -->
-      <div class="content-wrapper">
-        
-        <!-- === 左侧：文章流 === -->
-        <main class="main-content">
-          {processedPosts.length === 0 ? (
-            <article class="post-card">
-              <div class="post-text"><p>这里还没有任何文章。</p></div>
-            </article>
-          ) : (
-            processedPosts.map((post) => (
-              <article class="post-card" itemscope itemtype="http://schema.org/BlogPosting">
-                <!-- 整卡点击层 -->
-                <a href={post.permalink} class="card-overlay" aria-label={post.title}></a>
-
-                <header class="post-header">
-                  <div class="header-left">
-                    <div class="date-top">
-                      <span class="day-num" itemprop="datePublished" datetime={new Date(post.created * 1000).toISOString()}>
-                        {post.date.day}
-                      </span>
-                      {post.date.weekday && <span class="weekday">{post.date.weekday}</span>}
-                    </div>
-                    <div class="date-bottom">
-                      <span class="year-month">{post.date.yearMonth}</span>
-                      <span class="time">{post.date.time}</span>
-                    </div>
-                  </div>
-
-                  <div class="header-right">
-                    <a class="author-name" href={post.author ? buildAuthorLink(post.author.uid, urls.siteUrl) : '#'} rel="author" itemprop="name">
-                      @{post.authorName}
-                    </a>
-                    <img src={post.avatarUrl} alt={post.authorName} class="author-avatar" loading="lazy" />
-                  </div>
-                </header>
-
-                <!-- 文字摘要 -->
-                {post.excerpt && (
-                  <div class="post-text" itemprop="articleBody" set:html={post.excerpt} />
-                )}
-
-                <!-- 媒体区 -->
-                {post.mediaItems.length === 1 && post.mediaItems[0].type === 'image' && (
-                  <div class="post-images post-media" data-count="1">
-                    <img src={post.mediaItems[0].src} alt="配图" loading="lazy" class="lightbox-img" />
-                  </div>
-                )}
-                {post.mediaItems.length === 1 && post.mediaItems[0].type === 'livephoto' && (
-                  <div class="post-images post-media" data-count="1" set:html={post.mediaItems[0].html} />
-                )}
-                {post.mediaItems.length > 1 && (
-                  <div class="post-images post-media-grid" data-count={post.mediaItems.length}>
-                    {post.mediaItems.map((item) =>
-                      item.type === 'image' ? (
-                        <img src={item.src} alt="配图" loading="lazy" class="lightbox-img" />
-                      ) : (
-                        <div class="media-cell" set:html={buildGridLivePhoto(item.src!, item.videoSrc)} />
-                      )
-                    )}
-                  </div>
-                )}
-
-                <!-- 分类 -->
-                {post.categories.length > 0 && (
-                  <div class="post-category">
-                    <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
-                    <span>
-                      {post.categories.map((c, i) => (
-                        <>{i > 0 && ' / '}<a href={c.permalink}>{c.name}</a></>
-                      ))}
-                    </span>
-                  </div>
-                )}
-
-                <!-- 底部操作区 -->
-                <footer class="post-actions">
-                  <a class="action-btn" href={`${post.permalink}#comments`} aria-label="评论">
-                    <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                    {post.commentsNum > 0 && <span class="action-count">{post.commentsNum}</span>}
-                  </a>
-                  <button class="action-btn share-btn" type="button" aria-label="分享下载">
-                    <svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
-                  </button>
-                </footer>
-              </article>
-            ))
-          )}
-
-          {pagination.totalPages > 1 && (
-            <nav class="page-navigator">
-              {pagination.hasPrev && <a class="prev" href={pagination.prevUrl!}>&laquo; 前一页</a>}
-              {pagination.hasNext && <a class="next" href={pagination.nextUrl!}>后一页 &raquo;</a>}
-            </nav>
-          )}
-        </main>
-
-        <!-- === 右侧：侧边栏 (手机端自动堆叠在下方) === -->
-        {hasSidebar && (
-          <aside class="sidebar">
-            {recentPosts.length > 0 && (
-              <div class="widget">
-                <h3 class="widget-title">最新文章</h3>
-                <ul class="widget-list">
-                  {recentPosts.map((p: any) => <li><a href={p.permalink}>{p.title}</a></li>)}
-                </ul>
-              </div>
-            )}
-
-            {recentComments.length > 0 && (
-              <div class="widget widget-recent-comments">
-                <h3 class="widget-title">最近回复</h3>
-                <ul class="widget-list">
-                  {recentComments.map((c: any) => (
-                    <li>
-                      <a href={c.permalink}>
-                        <span class="comment-user">{c.author}:</span>
-                        <span class="comment-excerpt">{c.excerpt}</span>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {sidebarCategories.length > 0 && (
-              <div class="widget">
-                <h3 class="widget-title">分类</h3>
-                <ul class="widget-list">
-                  {sidebarCategories.map((cat: any) => (
-                    <li><a href={cat.permalink}>{cat.name}<span class="widget-count">{cat.count}</span></a></li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {archives.length > 0 && (
-              <div class="widget">
-                <h3 class="widget-title">归档</h3>
-                <ul class="widget-list">
-                  {archives.map((a: any) => <li><a href={a.permalink}>{a.date}</a></li>)}
-                </ul>
-              </div>
-            )}
-
-            <div class="widget">
-              <h3 class="widget-title">其它</h3>
-              <ul class="widget-list">
-                {isLoggedIn ? (
-                  <>
-                    <li><a href={urls.adminUrl}>后台 ({user?.screenName || user?.name})</a></li>
-                    <li><form method="post" action={urls.logoutUrl}><button type="submit" class="logout-btn">退出登录</button></form></li>
-                  </>
-                ) : (
-                  <li><a href={urls.loginUrl}>登录</a></li>
-                )}
-                <li><a href={urls.feedUrl}>文章 RSS</a></li>
-                <li><a href={urls.commentsFeedUrl}>评论 RSS</a></li>
-              </ul>
-            </div>
-          </aside>
-        )}
+    
+    <!-- 页首区 -->
+    <header class="site-header">
+      <div class="header-brand">
+        <h1 class="site-title">{options.title}</h1>
+        {options.description && <p class="site-subtitle">{options.description}</p>}
       </div>
+      <nav class="header-nav">
+        <a href={urls.siteUrl + '/'} class:list={['nav-item', { active: isIndex }]}>首页</a>
+        {pages.map((page) => (
+          <a href={page.permalink} class:list={['nav-item', { active: isPageActive(page.slug) }]}>{page.title}</a>
+        ))}
+        <a href="#" class="nav-item" id="snowiSearchToggle">搜索</a>
+      </nav>
+      
+      <!-- 隐藏的搜索框 -->
+      <form class="header-search" id="snowiSearch" method="post" action={urls.siteUrl + '/'} role="search">
+        <input type="text" name="s" placeholder="输入关键字搜索" autocomplete="off" />
+        <button type="submit">搜索</button>
+      </form>
+    </header>
 
-      <!-- ================= 页脚 ================= -->
-      <footer class="page-footer">
-        <button class="theme-toggle" id="snowiThemeToggle" type="button">
-          <span id="snowiThemeIcon">🌙</span>
-          <span id="snowiThemeText">切换至暗色模式</span>
-        </button>
-        <p class="site-copyright">&copy; {new Date().getFullYear()} {options.title} · 一起来堆雪人！</p>
-      </footer>
+    <!-- 卡片列表区 -->
+    <div class="cards-container">
+      {processedPosts.length === 0 ? (
+        <div class="card-wrapper">
+          <article class="post-card">
+            <div class="post-text"><p>这里还没有任何文章，请通过管理后台发布。</p></div>
+          </article>
+        </div>
+      ) : (
+        processedPosts.map((post) => (
+          <div class="card-wrapper">
+            <article class="post-card" itemscope itemtype="http://schema.org/BlogPosting">
+              <a href={post.permalink} class="card-overlay" aria-label={post.title}></a>
 
+              <!-- 头部 -->
+              <header class="post-header">
+                <div class="header-left">
+                  <div class="date-top">
+                    <span class="day-num" itemprop="datePublished" datetime={new Date(post.created * 1000).toISOString()}>{post.date.day}</span>
+                    {post.date.weekday && <span class="weekday">{post.date.weekday}</span>}
+                  </div>
+                  <div class="date-bottom">
+                    <span class="year-month">{post.date.yearMonth}</span>
+                    <span class="time">{post.date.time}</span>
+                  </div>
+                </div>
+                <div class="header-right">
+                  <a class="author-name" href={post.author ? buildAuthorLink(post.author.uid, urls.siteUrl) : '#'} rel="author" itemprop="name">
+                    @{post.authorName}
+                  </a>
+                  <img src={post.avatarUrl} alt={post.authorName} class="author-avatar" loading="lazy" />
+                </div>
+              </header>
+
+              <!-- 正文 -->
+              {post.excerpt && (
+                <div class="post-text" itemprop="articleBody" set:html={post.excerpt} />
+              )}
+
+              <!-- 媒体：单图 -->
+              {post.mediaItems.length === 1 && post.mediaItems[0].type === 'image' && (
+                <div class="post-images post-media" data-count="1">
+                  <img src={post.mediaItems[0].src} alt="配图" loading="lazy" class="lightbox-img" />
+                </div>
+              )}
+              {post.mediaItems.length === 1 && post.mediaItems[0].type === 'livephoto' && (
+                <div class="post-images post-media" data-count="1" set:html={post.mediaItems[0].html} />
+              )}
+
+              <!-- 媒体：多图网格 -->
+              {post.mediaItems.length > 1 && (
+                <div class="post-images post-media-grid" data-count={post.mediaItems.length}>
+                  {post.mediaItems.map((item) =>
+                    item.type === 'image' ? (
+                      <img src={item.src} alt="配图" loading="lazy" class="lightbox-img" />
+                    ) : (
+                      <div class="media-cell" set:html={buildGridLivePhoto(item.src!, item.videoSrc)} />
+                    )
+                  )}
+                </div>
+              )}
+
+              <!-- 分类 -->
+              {post.categories.length > 0 && (
+                <div class="post-category">
+                  <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                  <span>
+                    {post.categories.map((c, i) => (
+                      <>{i > 0 && ' / '}<a href={c.permalink}>{c.name}</a></>
+                    ))}
+                  </span>
+                </div>
+              )}
+
+              <!-- 底部操作区 -->
+              <footer class="post-actions">
+                <a class="action-btn" href={`${post.permalink}#comments`} aria-label="评论">
+                  <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                </a>
+                <button class="action-btn share-btn" type="button" aria-label="分享下载">
+                  <svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+                </button>
+              </footer>
+            </article>
+          </div>
+        ))
+      )}
     </div>
+
+    <!-- 分页 -->
+    {pagination.totalPages > 1 && (
+      <nav class="page-navigator">
+        {pagination.hasPrev && <a class="prev" href={pagination.prevUrl!}>&laquo; 前一页</a>}
+        {pagination.hasNext && <a class="next" href={pagination.nextUrl!}>后一页 &raquo;</a>}
+      </nav>
+    )}
+
+    <!-- 侧边栏（照常显示在手机端和 PC 端，作为独立区块） -->
+    {hasSidebar && (
+      <aside class="sidebar-section">
+        {recentPosts.length > 0 && (
+          <div class="widget">
+            <h3 class="widget-title">最新文章</h3>
+            <ul class="widget-list">
+              {recentPosts.map((p: any) => <li><a href={p.permalink}>{p.title}</a></li>)}
+            </ul>
+          </div>
+        )}
+        {recentComments.length > 0 && (
+          <div class="widget">
+            <h3 class="widget-title">最近回复</h3>
+            <ul class="widget-list">
+              {recentComments.map((c: any) => (
+                <li>
+                  <a href={c.permalink}>
+                    <span class="comment-user">{c.author}:</span>
+                    <span class="comment-excerpt">{c.excerpt}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {sidebarCategories.length > 0 && (
+          <div class="widget">
+            <h3 class="widget-title">分类</h3>
+            <ul class="widget-list">
+              {sidebarCategories.map((cat: any) => (
+                <li><a href={cat.permalink}>{cat.name} <span class="widget-count">{cat.count}</span></a></li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {archives.length > 0 && (
+          <div class="widget">
+            <h3 class="widget-title">归档</h3>
+            <ul class="widget-list">
+              {archives.map((a: any) => <li><a href={a.permalink}>{a.date}</a></li>)}
+            </ul>
+          </div>
+        )}
+        <div class="widget">
+          <h3 class="widget-title">其它</h3>
+          <ul class="widget-list">
+            {isLoggedIn ? (
+              <>
+                <li><a href={urls.adminUrl}>后台 ({user?.screenName || user?.name})</a></li>
+                <li><form method="post" action={urls.logoutUrl}><button type="submit" class="logout-btn">退出登录</button></form></li>
+              </>
+            ) : (
+              <li><a href={urls.loginUrl}>登录</a></li>
+            )}
+            <li><a href={urls.feedUrl}>文章 RSS</a></li>
+          </ul>
+        </div>
+      </aside>
+    )}
+
+    <!-- 页脚 -->
+    <footer class="page-footer">
+      <button class="theme-toggle" id="themeToggle">
+        <span id="themeIcon">🌙</span>
+        <span id="themeText">切换至暗色模式</span>
+      </button>
+    </footer>
   </div>
 
   <script is:inline src="/js/mood-player.min.js"></script>
@@ -312,58 +299,68 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 </Base>
 
 <!-- ==================================================================== -->
-<!-- 脚本部分 -->
+<!-- 交互脚本 -->
 <!-- ==================================================================== -->
 <script is:inline define:vars={{ siteTitle: options.title }}>
   (function () {
-    var page = document.querySelector('.snowi-page');
-    if (!page) return;
-
-    /* ---------------- 亮暗主题切换 ---------------- */
     var root = document.documentElement;
-    var toggle = document.getElementById('snowiThemeToggle');
-    var iconEl = document.getElementById('snowiThemeIcon');
-    var textEl = document.getElementById('snowiThemeText');
-
-    function applyTheme(isDark) {
-      if (isDark) root.classList.add('snowi-dark');
-      else root.classList.remove('snowi-dark');
-      if (iconEl) iconEl.textContent = isDark ? '☀️' : '🌙';
-      if (textEl) textEl.textContent = isDark ? '切换至亮色模式' : '切换至暗色模式';
+    var body = document.body;
+    
+    // 确保页面挂载了 snowi-page 类，供样式隔离
+    var pageEl = document.querySelector('.snowi-page');
+    if (pageEl) {
+       if (root.classList.contains('snowi-dark')) {
+          body.classList.add('dark-mode');
+       }
     }
 
-    var stored = null;
-    try { stored = localStorage.getItem('snowi-theme'); } catch (e) {}
-    applyTheme(stored === 'dark');
+    /* ---------------- 主题切换 ---------------- */
+    var themeToggle = document.getElementById('themeToggle');
+    var themeIcon = document.getElementById('themeIcon');
+    var themeText = document.getElementById('themeText');
 
-    if (toggle) {
-      toggle.addEventListener('click', function () {
-        var isDark = !root.classList.contains('snowi-dark');
-        applyTheme(isDark);
-        try { localStorage.setItem('snowi-theme', isDark ? 'dark' : 'light'); } catch (e) {}
+    function updateThemeUI(isDark) {
+      if (isDark) {
+        body.classList.add('dark-mode');
+        root.classList.add('snowi-dark');
+        themeIcon.innerText = '☀️';
+        themeText.innerText = '切换至亮色模式';
+      } else {
+        body.classList.remove('dark-mode');
+        root.classList.remove('snowi-dark');
+        themeIcon.innerText = '🌙';
+        themeText.innerText = '切换至暗色模式';
+      }
+    }
+
+    if (themeToggle) {
+      themeToggle.addEventListener('click', () => {
+        var isDark = !body.classList.contains('dark-mode');
+        updateThemeUI(isDark);
+        try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch (e) {}
       });
     }
 
-    /* ---------------- 分享截图 ---------------- */
-    var H2C_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-
-    function ensureHtml2Canvas() {
-      if (window.html2canvas) return Promise.resolve(window.html2canvas);
-      if (window.__snowiH2C) return window.__snowiH2C;
-      window.__snowiH2C = new Promise(function (resolve, reject) {
-        var s = document.createElement('script');
-        s.src = H2C_URL;
-        s.onload = function () { resolve(window.html2canvas); };
-        s.onerror = reject;
-        document.head.appendChild(s);
+    /* ---------------- 搜索框切换 ---------------- */
+    var searchToggle = document.getElementById('snowiSearchToggle');
+    var searchForm = document.getElementById('snowiSearch');
+    if (searchToggle && searchForm) {
+      searchToggle.addEventListener('click', function(e) {
+        e.preventDefault();
+        var open = searchForm.classList.toggle('open');
+        if (open) searchForm.querySelector('input').focus();
       });
-      return window.__snowiH2C;
     }
+
+    /* ---------------- 高清截图 ---------------- */
+    var shareBtns = document.querySelectorAll('.share-btn');
+    var loadingIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;animation:spin 1s linear infinite;"><style>@keyframes spin{100%{transform:rotate(360deg)}}</style><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9"></path></svg>`;
+    var CAPTURE_PADDING = '16px 12px 20px';
 
     function waitImageReady(img) {
       if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise(function (resolve) {
-        var done = function () { resolve(); };
+      return new Promise(resolve => {
+        const done = () => resolve();
         img.addEventListener('load', done, { once: true });
         img.addEventListener('error', done, { once: true });
         setTimeout(done, 6000);
@@ -371,18 +368,18 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     }
 
     function createCoverDataURL(img, targetW, targetH, pixelRatio) {
-      var cw = Math.max(1, Math.round(targetW * pixelRatio));
-      var ch = Math.max(1, Math.round(targetH * pixelRatio));
-      var canvas = document.createElement('canvas');
+      const cw = Math.max(1, Math.round(targetW * pixelRatio));
+      const ch = Math.max(1, Math.round(targetH * pixelRatio));
+      const canvas = document.createElement('canvas');
       canvas.width = cw;
       canvas.height = ch;
-      var ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d');
       if (!ctx) return null;
-      var iw = img.naturalWidth, ih = img.naturalHeight;
+      const iw = img.naturalWidth, ih = img.naturalHeight;
       if (!iw || !ih) return null;
-      var targetRatio = cw / ch, srcRatio = iw / ih;
-      var sx = 0, sy = 0, sw = iw, sh = ih;
-      if (srcRatio > targetRatio) { sw = ih * targetRatio; sx = (iw - sw) / 2; }
+      const targetRatio = cw / ch, srcRatio = iw / ih;
+      let sx = 0, sy = 0, sw = iw, sh = ih;
+      if (srcRatio > targetRatio) { sw = ih * targetRatio; sx = (iw - sw) / 2; } 
       else { sh = iw / targetRatio; sy = (ih - sh) / 2; }
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
@@ -391,85 +388,75 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     }
 
     async function snapshotCardImages(wrapper, pixelRatio) {
-      var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
+      const imgs = Array.from(wrapper.querySelectorAll('img'));
       if (imgs.length === 0) return [];
       await Promise.all(imgs.map(waitImageReady));
-      var snapshots = imgs.map(function (img) {
-        var rect = img.getBoundingClientRect();
-        var w = Math.max(1, Math.round(rect.width));
-        var h = Math.max(1, Math.round(rect.height));
-        return { w: w, h: h, dataURL: createCoverDataURL(img, w, h, pixelRatio) };
+      const origPadding = wrapper.style.padding;
+      wrapper.style.padding = CAPTURE_PADDING;
+      void wrapper.offsetWidth;
+      const snapshots = imgs.map(img => {
+        const rect = img.getBoundingClientRect();
+        const w = Math.max(1, Math.round(rect.width));
+        const h = Math.max(1, Math.round(rect.height));
+        return { w, h, dataURL: createCoverDataURL(img, w, h, pixelRatio) };
       });
+      wrapper.style.padding = origPadding;
       return snapshots;
     }
 
-    var loadingIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;animation:spin 1s linear infinite;"><style>@keyframes spin{100%{transform:rotate(360deg)}}</style><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9"></path></svg>`;
-
-    var shareBtns = document.querySelectorAll('.share-btn');
-    shareBtns.forEach(function (btn) {
+    shareBtns.forEach(btn => {
       btn.addEventListener('click', async function () {
         if (this.disabled) return;
-        var wrapper = this.closest('.post-card');
-        if (!wrapper) return;
-
-        var originalHTML = this.innerHTML;
-        var computedColor = window.getComputedStyle(this).color;
+        const currentWrapper = this.closest('.card-wrapper');
+        const originalHTML = this.innerHTML;
+        const computedColor = window.getComputedStyle(this).color;
 
         this.innerHTML = loadingIconHTML;
         this.disabled = true;
 
         try {
-          var h2c = await ensureHtml2Canvas();
-          var highResScale = (window.devicePixelRatio || 1) * 1.2;
-          var style = window.getComputedStyle(page);
-          
-          // 提取当前主题颜色，避免 html2canvas 读取 CSS 变量失败
-          var bgColor = style.getPropertyValue('--bg-color').trim() || '#f2f3f5';
-          var cardBg = style.getPropertyValue('--card-bg').trim() || '#ffffff';
-          var textMain = style.getPropertyValue('--text-main').trim() || '#444444';
-          var textSub = style.getPropertyValue('--text-sub').trim() || '#888888';
-          var footerBg = style.getPropertyValue('--footer-bg').trim() || '#fafafa';
-          var watermarkColor = style.getPropertyValue('--watermark-color').trim() || '#999999';
+          const highResScale = (window.devicePixelRatio || 1) * 1.2;
+          const currentBg = getComputedStyle(pageEl).getPropertyValue('--bg-color').trim() || '#f2f3f5';
+          const snapshots = await snapshotCardImages(currentWrapper, highResScale);
 
-          var snapshots = await snapshotCardImages(wrapper, highResScale);
-
-          var canvas = await h2c(wrapper, {
+          const canvas = await html2canvas(currentWrapper, {
             useCORS: true,
             allowTaint: false,
-            backgroundColor: bgColor,
+            backgroundColor: currentBg,
             scale: highResScale,
+            dpi: 300,
             logging: false,
-            // 过滤无法渲染的元素
-            ignoreElements: function(el) {
-              return el.tagName === 'MOOD-PLAYER' || el.tagName === 'VIDEO';
-            },
-            onclone: function (clonedDoc, element) {
-              // 强制注入 CSS 变量，防止在克隆环境下失效
-              element.style.setProperty('--bg-color', bgColor);
-              element.style.setProperty('--card-bg', cardBg);
-              element.style.setProperty('--text-main', textMain);
-              element.style.setProperty('--text-sub', textSub);
-              element.style.setProperty('--footer-bg', footerBg);
-              element.style.setProperty('--watermark-color', watermarkColor);
+            // 忽略视频和自定义元素防止崩溃
+            ignoreElements: (el) => el.tagName === 'MOOD-PLAYER' || el.tagName === 'VIDEO',
+            onclone: (clonedDoc, element) => {
+              element.style.padding = CAPTURE_PADDING;
+              
+              // 防止克隆节点解析不到 CSS 变量
+              element.style.setProperty('--bg-color', currentBg);
+              element.style.setProperty('--card-bg', getComputedStyle(pageEl).getPropertyValue('--card-bg').trim());
+              element.style.setProperty('--text-main', getComputedStyle(pageEl).getPropertyValue('--text-main').trim());
+              element.style.setProperty('--text-sub', getComputedStyle(pageEl).getPropertyValue('--text-sub').trim());
+              element.style.setProperty('--footer-bg', getComputedStyle(pageEl).getPropertyValue('--footer-bg').trim());
+              element.style.setProperty('--watermark-color', getComputedStyle(pageEl).getPropertyValue('--watermark-color').trim());
 
-              // 清理所有 svg 防止渲染崩坏
-              var allSvgs = element.querySelectorAll('svg');
-              allSvgs.forEach(svg => { svg.style.display = 'none'; });
+              // 清理掉会导致报错的动画或复杂 SVG
+              const allSvgs = element.querySelectorAll('svg');
+              allSvgs.forEach(svg => svg.style.display = 'none');
 
-              // 替换按钮图标
-              var clonedBtn = element.querySelector('.share-btn');
-              if (clonedBtn) clonedBtn.innerHTML = '';
-
-              // 添加水印
-              var watermark = clonedDoc.createElement('div');
+              const watermark = clonedDoc.createElement('div');
               watermark.className = 'snowi-watermark';
-              watermark.textContent = '❄️ ' + siteTitle + '.';
+              watermark.innerText = '❄️ ' + siteTitle + '.';
               element.appendChild(watermark);
 
-              // 处理图片拉伸问题
-              var clonedImgs = element.querySelectorAll('img');
-              clonedImgs.forEach(function (img, index) {
-                var snap = snapshots[index];
+              const clonedBtn = element.querySelector('.share-btn');
+              if (clonedBtn) {
+                clonedBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:${computedColor};stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>`;
+                clonedBtn.style.display = 'flex'; // 恢复显示
+              }
+
+              const clonedImgs = element.querySelectorAll('img');
+              clonedImgs.forEach((img, index) => {
+                const snap = snapshots[index];
                 if (!snap) return;
                 if (snap.dataURL) img.setAttribute('src', snap.dataURL);
                 img.style.width = snap.w + 'px';
@@ -478,16 +465,16 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
                 img.style.maxHeight = 'none';
                 img.style.objectFit = 'fill';
               });
-            },
+            }
           });
 
-          var link = document.createElement('a');
+          const link = document.createElement('a');
           link.download = 'Snowi-' + Date.now() + '.png';
           link.href = canvas.toDataURL('image/png');
           link.click();
         } catch (err) {
           console.error('截图失败:', err);
-          alert('截图生成失败，可能是浏览器兼容性问题。');
+          alert('截图生成失败，可能是组件兼容性问题。');
         } finally {
           this.innerHTML = originalHTML;
           this.disabled = false;
@@ -498,156 +485,143 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 </script>
 
 <!-- ==================================================================== -->
-<!-- 样式部分 -->
+<!-- 样式（严格复刻你给的模板，只加了必要的重置和侧边栏样式） -->
 <!-- ==================================================================== -->
 <style is:global>
-  /* ---------- 全局重置与变量 ---------- */
+  /* 消除白边 */
   html, body {
-    margin: 0; padding: 0; width: 100%;
-    background-color: var(--bg-color, #f2f3f5);
-    overflow-x: hidden; /* 消除两侧白边 */
+    margin: 0; padding: 0; width: 100%; overflow-x: hidden;
+    background-color: #f2f3f5;
   }
 
   .snowi-page {
-    --bg-color: #f2f3f5;
-    --card-bg: #ffffff;
-    --text-main: #444444;
-    --text-sub: #888888;
-    --icon-color: #888888;
-    --btn-hover: rgba(0, 0, 0, 0.05);
+    /* === 亮暗模式变量 === */
+    --bg-color: #f2f3f5;           
+    --card-bg: #ffffff;            
+    --text-main: #444444;          
+    --text-sub: #888888;           
+    --icon-color: #888888;         
+    --btn-hover: rgba(0,0,0,0.05);          
     --media-bg: #eeeeee;
-    --footer-bg: #fafafa;
-    --border-color: #eaeaea;
-    --accent-color: #333333;
+    --footer-bg: #fafafa; 
     --watermark-color: #999999;
+    --border-color: #eaeaea;
 
     background-color: var(--bg-color);
-    color: var(--text-main);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px;
+    color: var(--text-main);
     min-height: 100vh;
-    line-height: 1.5;
-    transition: background-color 0.3s ease, color 0.3s ease;
-  }
-
-  html.snowi-dark .snowi-page {
-    --bg-color: #121212;
-    --card-bg: #242426;
-    --text-main: #dcdcdc;
-    --text-sub: #aaaaaa;
-    --icon-color: #aaaaaa;
-    --btn-hover: rgba(255, 255, 255, 0.1);
-    --media-bg: #333333;
-    --footer-bg: #1e1e20;
-    --border-color: #333333;
-    --accent-color: #ffffff;
-    --watermark-color: #666666;
-  }
-
-  .snowi-page *, .snowi-page *::before, .snowi-page *::after {
     box-sizing: border-box;
   }
 
+  body.dark-mode .snowi-page, html.snowi-dark .snowi-page {
+    --bg-color: #121212;
+    --card-bg: #242426;
+    --text-main: #dcdcdc;          
+    --text-sub: #aaaaaa;
+    --icon-color: #aaaaaa;
+    --btn-hover: rgba(255,255,255,0.1);
+    --media-bg: #333333;
+    --footer-bg: #1e1e20; 
+    --watermark-color: #666666; 
+    --border-color: #333333;
+  }
+  html.snowi-dark body { background-color: #121212; }
+
   .snowi-page * {
-    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
-  .snowi-page a { text-decoration: none; color: inherit; }
-
-  /* ---------- 布局容器 ---------- */
-  .snowi-page .layout-wrapper {
-    max-width: 1040px;
-    margin: 0 auto;
-    padding: 20px 16px;
-  }
-
-  /* ---------- Header ---------- */
+  /* =========================================
+     全新页首区 (Header)
+     ========================================= */
   .snowi-page .site-header {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    margin-bottom: 24px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .snowi-page .header-top-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-  .snowi-page .site-branding { display: flex; flex-direction: column; gap: 4px; }
-  .snowi-page .site-title { font-size: 24px; font-weight: 800; color: var(--text-main); letter-spacing: 1px; }
-  .snowi-page .site-desc { font-size: 13px; color: var(--text-sub); }
-
-  .snowi-page .search-box {
-    display: flex;
-    align-items: center;
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
-    padding: 6px 14px;
     width: 100%;
-    max-width: 280px;
-  }
-  .snowi-page .search-box input {
-    border: none; background: transparent; outline: none;
-    color: var(--text-main); font-size: 13px; width: 100%;
-  }
-  .snowi-page .search-box input::placeholder { color: var(--text-sub); }
-  .snowi-page .search-box button {
-    background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center;
-  }
-  .snowi-page .search-box svg { width: 16px; height: 16px; stroke: var(--text-sub); fill: none; stroke-width: 2; }
-
-  .snowi-page .site-nav { display: flex; gap: 8px; flex-wrap: wrap; }
-  .snowi-page .site-nav a {
-    font-size: 14px; font-weight: 600; color: var(--text-sub);
-    padding: 6px 16px; border-radius: 8px;
-  }
-  .snowi-page .site-nav a:hover, .snowi-page .site-nav a.active {
-    background-color: var(--card-bg); color: var(--text-main); box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+    max-width: 440px;
+    margin-bottom: 20px;
+    padding: 0 4px;
   }
 
-  /* ---------- 主体内容布局 ---------- */
-  .snowi-page .content-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
+  .snowi-page .header-brand { margin-bottom: 24px; }
+
+  .snowi-page .site-title {
+    font-size: 32px; font-weight: 800; letter-spacing: 1px;
+    color: var(--text-main); margin-bottom: 8px; line-height: 1.2;
   }
 
-  .snowi-page .main-content {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    max-width: 640px;
-    margin: 0 auto;
+  .snowi-page .site-subtitle {
+    font-size: 14px; color: var(--text-sub); font-style: italic;
+    letter-spacing: 0.5px;
   }
 
-  /* ---------- 卡片样式 ---------- */
+  .snowi-page .header-nav { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  .snowi-page .nav-item {
+    text-decoration: none; font-size: 14px; font-weight: 600;
+    color: var(--text-sub); padding: 8px 18px; border-radius: 20px;
+    background-color: transparent; transition: all 0.2s ease;
+    cursor: pointer;
+  }
+  .snowi-page .nav-item:hover { background-color: var(--btn-hover); color: var(--text-main); }
+  .snowi-page .nav-item.active {
+    background-color: var(--card-bg); color: var(--text-main);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  body.dark-mode .snowi-page .nav-item.active {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  .snowi-page .header-search {
+    display: none; margin-top: 16px; gap: 8px; width: 100%;
+  }
+  .snowi-page .header-search.open { display: flex; }
+  .snowi-page .header-search input {
+    flex: 1; border: none; outline: none; background: var(--card-bg);
+    color: var(--text-main); padding: 10px 16px; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04); font-size: 14px;
+  }
+  .snowi-page .header-search button {
+    border: none; background: var(--card-bg); color: var(--text-main);
+    padding: 10px 20px; border-radius: 12px; cursor: pointer; font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  /* =========================================
+     卡片列表区
+     ========================================= */
+  .snowi-page .cards-container {
+    width: 100%; max-width: 440px;
+    display: flex; flex-direction: column; gap: 8px; 
+  }
+
+  .snowi-page .card-wrapper {
+    padding: 12px 0; width: 100%;
+  }
+
+  /* === 紧凑版卡片主体 === */
   .snowi-page .post-card {
     position: relative;
     background-color: var(--card-bg);
-    width: 100%;
-    border-radius: 16px; 
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    overflow: hidden; /* 关键：防止底部栏溢出变形 */
-    box-shadow: 0 2px 10px rgba(0,0,0,0.02); 
+    width: 100%; border-radius: 16px; padding: 16px; 
+    display: flex; flex-direction: column; gap: 12px; 
+    overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.02); 
   }
-
+  
   .snowi-page .card-overlay {
     position: absolute; inset: 0; z-index: 1; display: block; border-radius: 16px;
   }
 
+  /* 头部 */
   .snowi-page .post-header {
     position: relative; z-index: 2;
-    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    display: flex; justify-content: space-between; align-items: flex-start;
   }
 
   .snowi-page .header-left { display: flex; flex-direction: column; gap: 2px; }
@@ -656,37 +630,36 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   .snowi-page .weekday { font-size: 13px; font-weight: 700; color: var(--text-main); }
   .snowi-page .year-month, .snowi-page .time { font-size: 11px; color: var(--text-sub); font-weight: 500; letter-spacing: 0.5px; }
 
-  .snowi-page .header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .snowi-page .author-name {
-    font-size: 13px; font-weight: 800; color: #aaaaaa; letter-spacing: 0.5px;
-    max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  html.snowi-dark .snowi-page .author-name { color: #888888; }
+  .snowi-page .header-right { display: flex; align-items: center; gap: 6px; }
+  .snowi-page .author-name { font-size: 13px; font-weight: 800; color: #aaaaaa; letter-spacing: 0.5px; text-decoration: none; }
+  body.dark-mode .snowi-page .author-name { color: #888888; }
   .snowi-page .author-avatar {
-    width: 32px; height: 32px; border-radius: 10px; object-fit: cover;
-    background-color: var(--media-bg); display: block;
+    width: 32px; height: 32px; border-radius: 10px; object-fit: cover; background-color: var(--media-bg);
   }
 
-  /* ---------- 正文排版 ---------- */
+  /* 正文 */
   .snowi-page .post-text {
     position: relative; z-index: 2;
     font-size: 14px; line-height: 1.75; color: var(--text-main); word-wrap: break-word;
   }
-  .snowi-page .post-text p { margin: 0 0 10px; }
+  .snowi-page .post-text p { margin-bottom: 10px; }
   .snowi-page .post-text p:last-child { margin-bottom: 0; }
-  .snowi-page .post-text mood-player { position: relative; z-index: 3; display: block; margin: 12px 0; }
 
-  /* ---------- 媒体区 ---------- */
-  .snowi-page .post-media, .snowi-page .post-media-grid {
+  /* 图片区 */
+  .snowi-page .post-media {
     position: relative; z-index: 2;
-    width: 100%; max-width: 100%; margin: 0; border-radius: 12px; overflow: hidden; background-color: var(--media-bg);
+    width: 100%; border-radius: 12px; overflow: hidden; background-color: var(--media-bg);
   }
-  .snowi-page .post-media[data-count="1"] { padding: 0; }
-  .snowi-page .post-media[data-count="1"] > img { width: 100%; height: auto; max-height: 400px; object-fit: cover; display: block; }
+  .snowi-page .post-media img { width: 100%; height: auto; display: block; object-fit: cover; max-height: 400px; }
   .snowi-page .post-media .live-photo { width: 100%; background-color: var(--media-bg); }
 
-  .snowi-page .post-media-grid { display: grid; gap: 4px; background-color: transparent; }
+  /* 双图/三图网格通用 */
+  .snowi-page .post-media-grid {
+    position: relative; z-index: 2;
+    display: grid; gap: 4px; border-radius: 12px; overflow: hidden; background-color: transparent;
+  }
   .snowi-page .post-media-grid > * { display: block; width: 100%; height: 100%; object-fit: cover; background-color: var(--media-bg); }
+
   .snowi-page .post-media-grid[data-count="2"] { grid-template-columns: 1fr 1fr; }
   .snowi-page .post-media-grid[data-count="2"] > * { height: 160px; }
   .snowi-page .post-media-grid[data-count="3"] { grid-template-columns: repeat(3, 1fr); }
@@ -707,126 +680,84 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   .snowi-page .media-cell { position: relative; overflow: hidden; background-color: var(--media-bg); }
   .snowi-page .media-cell .live-photo { width: 100%; height: 100%; }
 
-  /* ---------- 分类与底部操作栏 ---------- */
+  /* 分类 */
   .snowi-page .post-category {
     position: relative; z-index: 2;
-    display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
-    font-size: 12px; color: var(--text-sub); margin-top: 4px;
+    display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-sub); margin-top: 4px;
   }
-  .snowi-page .post-category svg {
-    width: 14px; height: 14px; fill: none; stroke: var(--text-sub);
-    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0;
-  }
-  .snowi-page .post-category a { color: var(--text-sub); }
+  .snowi-page .post-category svg { width: 14px; height: 14px; fill: none; stroke: var(--text-sub); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .snowi-page .post-category a { text-decoration: none; color: inherit; }
   .snowi-page .post-category a:hover { color: var(--text-main); }
 
+  /* 底部操作区 */
   .snowi-page .post-actions {
     position: relative; z-index: 2;
     background-color: var(--footer-bg); 
-    margin: 0 -16px -16px -16px; /* 撑满卡片底部 */
+    margin: 0 -16px -16px -16px; 
     padding: 8px 16px; 
     border-radius: 0 0 16px 16px; 
-    display: flex;
-    justify-content: flex-end; /* 修复：强制靠右 */
-    align-items: center;
-    gap: 6px; 
+    display: flex; justify-content: flex-end; align-items: center; gap: 6px; 
   }
 
   .snowi-page .action-btn {
-    background: none; border: none; cursor: pointer; padding: 4px 6px; border-radius: 6px;
-    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-    color: var(--icon-color); font-size: 12px; transition: all 0.2s;
+    background: none; border: none; cursor: pointer; padding: 4px; border-radius: 6px; 
+    display: flex; align-items: center; justify-content: center; color: var(--icon-color); transition: all 0.2s;
+    text-decoration: none;
   }
   .snowi-page .action-btn:hover { background-color: var(--btn-hover); color: var(--text-main); }
   .snowi-page .action-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .snowi-page .action-count { font-size: 12px; font-weight: 600; line-height: 1; }
 
-  /* ---------- 侧边栏 ---------- */
-  .snowi-page .sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    width: 100%;
+  /* 水印 */
+  .snowi-page .snowi-watermark {
+    display: block; text-align: right; font-size: 11px; font-weight: 700; 
+    color: var(--watermark-color); margin-top: 16px; letter-spacing: 1px; padding-right: 15px; 
+  }
+
+  /* =========================================
+     分页与侧边栏
+     ========================================= */
+  .snowi-page .page-navigator {
+    display: flex; justify-content: center; align-items: center; gap: 12px;
+    margin: 20px 0 10px; width: 100%; max-width: 440px;
+  }
+  .snowi-page .page-navigator a {
+    text-decoration: none; font-size: 13px; font-weight: 600; color: var(--text-sub);
+    padding: 8px 16px; border-radius: 20px; background-color: var(--card-bg);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: all 0.2s;
+  }
+  .snowi-page .page-navigator a:hover { color: var(--text-main); }
+
+  /* 侧边栏：直接堆叠在底部居中显示，兼容手机 */
+  .snowi-page .sidebar-section {
+    width: 100%; max-width: 440px; margin-top: 24px; display: flex; flex-direction: column; gap: 16px;
   }
   .snowi-page .widget {
-    background-color: var(--card-bg);
-    border-radius: 16px;
-    padding: 16px;
+    background-color: var(--card-bg); border-radius: 16px; padding: 16px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.02);
   }
   .snowi-page .widget-title {
     font-size: 14px; font-weight: 800; color: var(--text-main);
-    margin: 0 0 12px 0; padding-bottom: 10px; border-bottom: 1px solid var(--border-color);
+    margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color);
   }
-  .snowi-page .widget-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .snowi-page .widget-list { list-style: none; display: flex; flex-direction: column; gap: 10px; padding: 0; }
   .snowi-page .widget-list li a {
-    font-size: 13px; color: var(--text-sub);
-    display: flex; justify-content: space-between; align-items: center; transition: color 0.2s;
+    font-size: 13px; color: var(--text-sub); display: flex; justify-content: space-between; align-items: center; text-decoration: none;
   }
-  .snowi-page .widget-list li a:hover { color: var(--accent-color); }
-  
-  .snowi-page .widget-recent-comments li a { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .snowi-page .widget-list li a:hover { color: var(--text-main); }
   .snowi-page .comment-user { font-weight: 600; color: var(--text-main); }
-  .snowi-page .comment-excerpt { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
-  
+  .snowi-page .comment-excerpt { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; display: block; margin-top: 4px; }
   .snowi-page .widget-count { font-size: 11px; color: var(--text-sub); background: var(--btn-hover); padding: 2px 8px; border-radius: 10px; }
   .snowi-page .logout-btn { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--text-sub); padding: 0; }
-  .snowi-page .logout-btn:hover { color: var(--accent-color); }
+  .snowi-page .logout-btn:hover { color: var(--text-main); }
 
-  /* ---------- 分页 ---------- */
-  .snowi-page .page-navigator {
-    display: flex; justify-content: center; align-items: center; gap: 12px; margin: 10px 0;
-  }
-  .snowi-page .page-navigator a {
-    text-decoration: none; font-size: 13px; font-weight: 600; color: var(--text-sub);
-    padding: 10px 20px; border-radius: 20px; background-color: var(--card-bg); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  }
-  .snowi-page .page-navigator a:hover { color: var(--text-main); }
-
-  /* ---------- 页脚 ---------- */
+  /* 页脚控制区 */
   .snowi-page .page-footer {
-    margin-top: 30px; margin-bottom: 20px;
-    display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
+    margin-top: 30px; margin-bottom: 40px; display: flex; justify-content: center; align-items: center;
   }
   .snowi-page .theme-toggle {
-    background-color: var(--card-bg); border: none; border-radius: 20px; padding: 10px 20px;
-    cursor: pointer; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); display: flex; align-items: center; gap: 8px;
-    font-size: 13px; font-weight: 600; color: var(--text-sub);
+    background: var(--card-bg); border: none; border-radius: 20px; padding: 10px 20px;
+    cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; color: var(--text-sub); transition: all 0.2s;
   }
   .snowi-page .theme-toggle:hover { color: var(--text-main); }
-  .snowi-page .site-copyright { font-size: 11px; color: var(--text-sub); margin: 0; letter-spacing: 0.5px; }
-
-  /* ---------- 响应式：大屏显示侧边栏吸附 ---------- */
-  @media (min-width: 860px) {
-    .snowi-page .site-header {
-      flex-direction: row; align-items: flex-end; justify-content: space-between; padding-bottom: 20px;
-    }
-    .snowi-page .header-top-row { width: auto; flex-direction: column; align-items: flex-start; gap: 16px; }
-    .snowi-page .site-nav { margin-top: 10px; }
-    
-    .snowi-page .content-wrapper {
-      flex-direction: row; align-items: flex-start; justify-content: space-between;
-    }
-    .snowi-page .main-content {
-      margin: 0; max-width: calc(100% - 320px);
-    }
-    .snowi-page .sidebar {
-      width: 300px; position: sticky; top: 20px;
-    }
-  }
-
-  /* ---------- 响应式：小屏适配 ---------- */
-  @media (max-width: 480px) {
-    .snowi-page .layout-wrapper { padding: 16px 12px; }
-    .snowi-page .site-title { font-size: 22px; }
-    .snowi-page .post-media-grid[data-count="2"] > * { height: 140px; }
-    .snowi-page .post-media-grid[data-count="3"] > * { height: 100px; }
-    .snowi-page .post-media-grid[data-count="4"] > * { height: 130px; }
-    .snowi-page .post-media-grid[data-count="5"] > *,
-    .snowi-page .post-media-grid[data-count="6"] > *,
-    .snowi-page .post-media-grid[data-count="7"] > *,
-    .snowi-page .post-media-grid[data-count="8"] > *,
-    .snowi-page .post-media-grid[data-count="9"] > * { height: 92px; }
-    .snowi-page .author-name { max-width: 80px; }
-  }
 </style>
