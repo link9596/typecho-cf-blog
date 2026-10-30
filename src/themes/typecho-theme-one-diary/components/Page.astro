@@ -140,8 +140,8 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
             itemscope
             itemtype="http://schema.org/WebPage"
           >
-            <!-- 头部：日期 -->
-            <header class="post-header">
+            <!-- 头部：日期 + 页面标题（右上角） -->
+            <header class="post-header page-header">
               <div class="header-left">
                 <div class="date-top">
                   <span
@@ -157,14 +157,11 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
               </div>
 
               <div class="header-right">
-                <span class="page-badge">PAGE</span>
+                <h1 class="page-heading" itemprop="name headline">
+                  <a itemprop="url" href={page.permalink}>{page.title}</a>
+                </h1>
               </div>
             </header>
-
-            <!-- 标题 -->
-            <h1 class="post-title" itemprop="name headline">
-              <a itemprop="url" href={page.permalink}>{page.title}</a>
-            </h1>
 
             <!-- 正文 / 密码 -->
             {!canSeeContent ? (

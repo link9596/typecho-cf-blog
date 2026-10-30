@@ -163,7 +163,14 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
                     <a class="author-name" href={post.author ? buildAuthorLink(post.author.uid, urls.siteUrl) : '#'} rel="author" itemprop="name">
                       @{post.authorName}
                     </a>
-                    <img src={post.avatarUrl} alt={post.authorName} class="author-avatar" loading="lazy" />
+                    <a
+                      class="author-avatar-link"
+                      href={post.author ? buildAuthorLink(post.author.uid, urls.siteUrl) : '#'}
+                      rel="author"
+                      aria-label={post.authorName}
+                    >
+                      <img src={post.avatarUrl} alt={post.authorName} class="author-avatar" loading="lazy" />
+                    </a>
                   </div>
                 </header>
 

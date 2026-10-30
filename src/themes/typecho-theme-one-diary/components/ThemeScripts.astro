@@ -369,7 +369,25 @@ const { siteTitle = '' } = Astro.props;
       if (shareBtn) {
         e.preventDefault();
         handleShare(shareBtn);
+        return;
       }
+
+      /* 卡片空白 / 文字 / 日期区域也可以进入文章详情 */
+      var card = target.closest('.post-card');
+      if (!card) return;
+      var overlay = card.querySelector('.card-overlay');
+      if (!overlay) return;
+      if (target.closest('a, button, input, textarea, select, label, form, video, audio, mood-player, .post-actions, .post-media, .post-media-grid, .live-photo, .post-category, .post-tags, .lightbox-img')) return;
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+      var selection = '';
+      try {
+        selection = String(window.getSelection ? window.getSelection() : '');
+      } catch (err) {}
+      if (selection) return;
+
+      e.preventDefault();
+      if (overlay.href) window.location.href = overlay.href;
     });
 
     /* ================= Swup / Astro 切页 ================= */

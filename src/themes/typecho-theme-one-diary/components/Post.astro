@@ -181,12 +181,19 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
                   rel="author"
                   itemprop="author"
                 >@{authorName}</a>
-                <img
-                  src={authorAvatar}
-                  alt={authorName}
-                  class="author-avatar"
-                  loading="lazy"
-                />
+                <a
+                  class="author-avatar-link"
+                  href={author ? buildAuthorLink(author.uid, urls.siteUrl) : '#'}
+                  rel="author"
+                  aria-label={authorName}
+                >
+                  <img
+                    src={authorAvatar}
+                    alt={authorName}
+                    class="author-avatar"
+                    loading="lazy"
+                  />
+                </a>
               </div>
             </header>
 

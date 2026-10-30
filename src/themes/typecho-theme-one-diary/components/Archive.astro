@@ -206,12 +206,19 @@ const emptyText = archiveType === 'search' ? '没有找到匹配的文章。' : 
                       rel="author"
                       itemprop="author"
                     >@{post.authorName}</a>
-                    <img
-                      src={post.avatarUrl}
-                      alt={post.authorName}
-                      class="author-avatar"
-                      loading="lazy"
-                    />
+                    <a
+                      class="author-avatar-link"
+                      href={post.author ? buildAuthorLink(post.author.uid, urls.siteUrl) : '#'}
+                      rel="author"
+                      aria-label={post.authorName}
+                    >
+                      <img
+                        src={post.avatarUrl}
+                        alt={post.authorName}
+                        class="author-avatar"
+                        loading="lazy"
+                      />
+                    </a>
                   </div>
                 </header>
 
