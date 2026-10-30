@@ -1,7 +1,7 @@
 ---
 /**
  * Snowi theme — Index (home page)
- * 严格复刻原版 440px 单列居中极简日记流
+ * 严格复刻 440px 单列居中极简日记流
  */
 import Base from '@/layouts/Base.astro';
 import type { ThemeIndexProps } from '@/lib/theme-props';
@@ -544,10 +544,10 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   /* 卡片列表区 */
   .snowi-page .cards-container {
     width: 100%; max-width: 440px;
-    display: flex; flex-direction: column; gap: 8px; 
+    display: flex; flex-direction: column; gap: 16px; 
   }
   .snowi-page .card-wrapper {
-    padding: 12px 0; width: 100%;
+    width: 100%;
   }
 
   /* 卡片主体 */
@@ -556,12 +556,12 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     background-color: var(--card-bg);
     width: 100%; 
     border-radius: 16px; 
-    padding: 16px; 
+    padding: 20px 16px 16px; /* 顶部给多一点空间，类似截图 */
     display: flex; 
     flex-direction: column; 
-    gap: 12px; 
+    gap: 14px; /* 控制内部元素间距 */
     overflow: hidden; 
-    box-shadow: 0 2px 10px rgba(0,0,0,0.02); 
+    box-shadow: 0 2px 12px rgba(0,0,0,0.03); 
   }
 
   .snowi-page .card-overlay {
@@ -573,25 +573,29 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
     position: relative; z-index: 2;
     display: flex; justify-content: space-between; align-items: flex-start;
   }
-  .snowi-page .header-left { display: flex; flex-direction: column; gap: 2px; }
-  .snowi-page .date-top, .snowi-page .date-bottom { display: flex; align-items: baseline; gap: 8px; }
-  .snowi-page .day-num { font-size: 22px; font-weight: 800; line-height: 1; color: var(--text-main); }
-  .snowi-page .weekday { font-size: 13px; font-weight: 700; color: var(--text-main); }
-  .snowi-page .year-month, .snowi-page .time { font-size: 11px; color: var(--text-sub); font-weight: 500; letter-spacing: 0.5px; }
+  .snowi-page .header-left { display: flex; flex-direction: column; gap: 4px; }
+  .snowi-page .date-top { display: flex; align-items: baseline; gap: 8px; }
+  .snowi-page .date-bottom { display: flex; align-items: center; gap: 8px; }
+  
+  /* 日期数字加大 */
+  .snowi-page .day-num { font-size: 28px; font-weight: 800; line-height: 1; color: var(--text-main); }
+  .snowi-page .weekday { font-size: 14px; font-weight: 700; color: var(--text-main); }
+  .snowi-page .year-month, .snowi-page .time { font-size: 12px; color: var(--text-sub); font-weight: 500; letter-spacing: 0.5px; }
 
-  .snowi-page .header-right { display: flex; align-items: center; gap: 6px; }
-  .snowi-page .author-name { font-size: 13px; font-weight: 800; color: #aaaaaa; letter-spacing: 0.5px; text-decoration: none; }
+  /* 右侧作者 */
+  .snowi-page .header-right { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .snowi-page .author-name { font-size: 14px; font-weight: 700; color: #aaaaaa; letter-spacing: 0.5px; text-decoration: none; }
   body.dark-mode .snowi-page .author-name { color: #888888; }
   .snowi-page .author-avatar {
-    width: 32px; height: 32px; border-radius: 10px; object-fit: cover; background-color: var(--media-bg);
+    width: 36px; height: 36px; border-radius: 10px; object-fit: cover; background-color: var(--media-bg);
   }
 
   /* 正文 */
   .snowi-page .post-text {
     position: relative; z-index: 2;
-    font-size: 14px; line-height: 1.75; color: var(--text-main); word-wrap: break-word;
+    font-size: 15px; line-height: 1.6; color: var(--text-main); word-wrap: break-word;
   }
-  .snowi-page .post-text p { margin-bottom: 10px; }
+  .snowi-page .post-text p { margin-bottom: 8px; }
   .snowi-page .post-text p:last-child { margin-bottom: 0; }
 
   /* 图片区 */
@@ -632,33 +636,30 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
   /* 分类 */
   .snowi-page .post-category {
     position: relative; z-index: 2;
-    display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-sub); margin-top: 4px;
+    display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-sub); margin-top: 2px;
   }
-  .snowi-page .post-category svg { width: 14px; height: 14px; fill: none; stroke: var(--text-sub); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .snowi-page .post-category svg { width: 16px; height: 16px; fill: none; stroke: var(--text-sub); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .snowi-page .post-category a { text-decoration: none; color: inherit; }
   .snowi-page .post-category a:hover { color: var(--text-main); }
 
-  /* 底部操作区（严格对齐参考模板） */
+  /* 底部操作区 (完全修正，去掉负margin和背景色，贴合截图) */
   .snowi-page .post-actions {
     position: relative; 
     z-index: 2;
-    background-color: var(--footer-bg); 
-    margin: 0 -16px -16px -16px; 
-    padding: 8px 16px; 
-    border-radius: 0 0 16px 16px; 
+    margin-top: 4px;
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    gap: 6px; 
+    gap: 8px; 
   }
 
   .snowi-page .action-btn {
-    background: none; border: none; cursor: pointer; padding: 4px; border-radius: 6px; 
+    background: none; border: none; cursor: pointer; padding: 6px; border-radius: 8px; 
     display: flex; align-items: center; justify-content: center; color: var(--icon-color); transition: all 0.2s;
     text-decoration: none;
   }
   .snowi-page .action-btn:hover { background-color: var(--btn-hover); color: var(--text-main); }
-  .snowi-page .action-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .snowi-page .action-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
   /* 水印 */
   .snowi-page .snowi-watermark {
