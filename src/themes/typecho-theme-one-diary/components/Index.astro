@@ -6,6 +6,8 @@ import Base from '@/layouts/Base.astro';
 import type { ThemeIndexProps } from '@/lib/theme-props';
 import { buildAuthorLink } from '@/lib/content';
 import GlobalPlayer from './GlobalPlayer.astro';
+import ThemeScripts from './ThemeScripts.astro';
+import VisibilityTag from './VisibilityTag.astro';
 
 type Props = ThemeIndexProps;
 
@@ -93,9 +95,9 @@ function processPost(post: any) {
 const processedPosts = posts.map(processPost);
 
 function buildGridLivePhoto(src: string, videoSrc?: string): string {
-  return `<div class="live-photo" style="position:relative;width:100%;height:100%;overflow:hidden;">
-    <img class="live-photo-img" src="${src}" alt="Live Photo" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;">
-    <video class="live-photo-video" playsinline muted preload="auto" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;">
+  return `<div class="live-photo">
+    <img class="live-photo-img" src="${src}" alt="Live Photo">
+    <video class="live-photo-video" playsinline muted preload="auto" poster="${src}">
       <source src="${videoSrc || ''}" type="video/mp4">
     </video>
   </div>`;
@@ -104,16 +106,15 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 
 <script is:inline>
   try {
-    if (localStorage.getItem('theme') === 'dark') {
-      document.documentElement.classList.add('snowi-dark');
-    }
+    var snowiTheme = localStorage.getItem('snowi-theme') || localStorage.getItem('theme');
+    if (snowiTheme === 'dark') document.documentElement.classList.add('snowi-dark');
   } catch (e) {}
 </script>
 
 <Base options={options} urls={urls} user={user} isLoggedIn={isLoggedIn} pluginCtx={pluginCtx}>
   <div class="snowi-page">
 
-    <header class="site-header">
+    <header class="site-header" id="header">
       <div class="header-brand">
         <h1 class="site-title">{options.title}</h1>
         {options.description && <p class="site-subtitle">{options.description}</p>}
@@ -123,615 +124,192 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
         {pages.map((page) => (
           <a href={page.permalink} class:list={['nav-item', { active: isPageActive(page.slug) }]}>{page.title}</a>
         ))}
-        <a href="#" class="nav-item" id="snowiSearchToggle">搜索</a>
+        <button type="button" class="nav-item" id="snowiSearchToggle">搜索</button>
       </nav>
 
       <form class="header-search" id="snowiSearch" method="post" action={urls.siteUrl + '/'} role="search">
-        <input type="text" name="s" placeholder="输入关键字搜索" autocomplete="off" />
-        <button type="submit">搜索</button>
+        <label for="s" class="sr-only">搜索关键字</label>
+        <input type="text" id="s" name="s" class="text" placeholder="输入关键字搜索" autocomplete="off" />
+        <button type="submit" class="search-submit">搜索</button>
       </form>
     </header>
 
-    <div class="cards-container">
-      {processedPosts.length === 0 ? (
-        <div class="card-wrapper">
-          <article class="post-card">
-            <div class="post-text"><p>这里还没有任何文章，请通过管理后台发布。</p></div>
-          </article>
-        </div>
-      ) : (
-        processedPosts.map((post) => (
+    <div class="page-layout">
+      <main class="post-container" id="main" role="main">
+
+        {processedPosts.length === 0 ? (
           <div class="card-wrapper">
-            <article class="post-card" itemscope itemtype="http://schema.org/BlogPosting">
-              <a href={post.permalink} class="card-overlay" aria-label={post.title}></a>
-
-              <header class="post-header">
-                <div class="header-left">
-                  <div class="date-top">
-                    <span class="day-num" itemprop="datePublished" datetime={new Date(post.created * 1000).toISOString()}>{post.date.day}</span>
-                    {post.date.weekday && <span class="weekday">{post.date.weekday}</span>}
-                  </div>
-                  <div class="date-bottom">
-                    <span class="year-month">{post.date.yearMonth}</span>
-                    <span class="time">{post.date.time}</span>
-                  </div>
-                </div>
-                <div class="header-right">
-                  <a class="author-name" href={post.author ? buildAuthorLink(post.author.uid, urls.siteUrl) : '#'} rel="author" itemprop="name">
-                    @{post.authorName}
-                  </a>
-                  <img src={post.avatarUrl} alt={post.authorName} class="author-avatar" loading="lazy" />
-                </div>
-              </header>
-
-              {post.excerpt && (
-                <div class="post-text" itemprop="articleBody" set:html={post.excerpt} />
-              )}
-
-              {post.mediaItems.length === 1 && post.mediaItems[0].type === 'image' && (
-                <div class="post-images post-media" data-count="1">
-                  <img src={post.mediaItems[0].src} alt="配图" loading="lazy" class="lightbox-img" />
-                </div>
-              )}
-              {post.mediaItems.length === 1 && post.mediaItems[0].type === 'livephoto' && (
-                <div class="post-images post-media" data-count="1" set:html={post.mediaItems[0].html} />
-              )}
-
-              {post.mediaItems.length > 1 && (
-                <div class="post-images post-media-grid" data-count={post.mediaItems.length}>
-                  {post.mediaItems.map((item) =>
-                    item.type === 'image' ? (
-                      <img src={item.src} alt="配图" loading="lazy" class="lightbox-img" />
-                    ) : (
-                      <div class="media-cell" set:html={buildGridLivePhoto(item.src!, item.videoSrc)} />
-                    )
-                  )}
-                </div>
-              )}
-
-              {post.categories.length > 0 && (
-                <div class="post-category">
-                  <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
-                  <span>
-                    {post.categories.map((c, i) => (
-                      <>{i > 0 && ' / '}<a href={c.permalink}>{c.name}</a></>
-                    ))}
-                  </span>
-                </div>
-              )}
-
-              <footer class="post-actions">
-                <a class="action-btn" href={`${post.permalink}#comments`} aria-label="评论">
-                  <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                </a>
-                <button class="action-btn share-btn" type="button" aria-label="分享下载">
-                  <svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
-                </button>
-              </footer>
+            <article class="post-card">
+              <div class="post-text"><p>这里还没有任何文章，请通过管理后台发布。</p></div>
             </article>
           </div>
-        ))
-      )}
+        ) : (
+          processedPosts.map((post) => (
+            <div class="card-wrapper">
+              <article class="post-card" itemscope itemtype="http://schema.org/BlogPosting">
+                <a href={post.permalink} class="card-overlay" aria-label={post.title}></a>
+
+                <header class="post-header">
+                  <div class="header-left">
+                    <div class="date-top">
+                      <span class="day-num" itemprop="datePublished" datetime={new Date(post.created * 1000).toISOString()}>{post.date.day}</span>
+                      {post.date.weekday && <span class="weekday">{post.date.weekday}</span>}
+                    </div>
+                    <div class="date-bottom">
+                      <span class="year-month">{post.date.yearMonth}</span>
+                      <span class="time">{post.date.time}</span>
+                      <VisibilityTag status={post.status} />
+                    </div>
+                  </div>
+                  <div class="header-right">
+                    <a class="author-name" href={post.author ? buildAuthorLink(post.author.uid, urls.siteUrl) : '#'} rel="author" itemprop="name">
+                      @{post.authorName}
+                    </a>
+                    <a
+                      class="author-avatar-link"
+                      href={post.author ? buildAuthorLink(post.author.uid, urls.siteUrl) : '#'}
+                      rel="author"
+                      aria-label={post.authorName}
+                    >
+                      <img src={post.avatarUrl} alt={post.authorName} class="author-avatar" loading="lazy" />
+                    </a>
+                  </div>
+                </header>
+
+                {post.excerpt && (
+                  <div class="post-text" itemprop="articleBody" set:html={post.excerpt} />
+                )}
+
+                {post.mediaItems.length === 1 && post.mediaItems[0].type === 'image' && (
+                  <div class="post-images post-media" data-count="1">
+                    <img src={post.mediaItems[0].src} alt="配图" loading="lazy" class="lightbox-img" />
+                  </div>
+                )}
+                {post.mediaItems.length === 1 && post.mediaItems[0].type === 'livephoto' && (
+                  <div class="post-images post-media" data-count="1" set:html={post.mediaItems[0].html} />
+                )}
+
+                {post.mediaItems.length > 1 && (
+                  <div class="post-images post-media-grid" data-count={post.mediaItems.length}>
+                    {post.mediaItems.map((item) =>
+                      item.type === 'image' ? (
+                        <img src={item.src} alt="配图" loading="lazy" class="lightbox-img" />
+                      ) : (
+                        <div class="media-cell" set:html={buildGridLivePhoto(item.src!, item.videoSrc)} />
+                      )
+                    )}
+                  </div>
+                )}
+
+                {post.categories.length > 0 && (
+                  <div class="post-category">
+                    <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                    <span>
+                      {post.categories.map((c, i) => (
+                        <>{i > 0 && ' / '}<a href={c.permalink}>{c.name}</a></>
+                      ))}
+                    </span>
+                  </div>
+                )}
+
+                <footer class="post-actions">
+                  <a class="action-btn" href={`${post.permalink}#comments`} aria-label="评论">
+                    <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    {post.commentsNum > 0 && <span class="action-count">{post.commentsNum}</span>}
+                  </a>
+                  <button class="action-btn share-btn" type="button" aria-label="分享下载">
+                    <svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          ))
+        )}
+
+        {pagination.totalPages > 1 && (
+          <nav class="page-navigator">
+            {pagination.hasPrev && <a class="prev" href={pagination.prevUrl!}>&laquo; 前一页</a>}
+            {pagination.hasNext && <a class="next" href={pagination.nextUrl!}>后一页 &raquo;</a>}
+          </nav>
+        )}
+      </main>
+
+      <aside class:list={['sidebar-section', { 'sidebar-empty': !hasSidebar }]} id="secondary" role="complementary">
+        {hasSidebar && (
+          <>
+            {recentPosts.length > 0 && (
+              <div class="widget">
+                <h3 class="widget-title">最新文章</h3>
+                <ul class="widget-list">
+                  {recentPosts.map((p: any) => <li><a href={p.permalink}>{p.title}</a></li>)}
+                </ul>
+              </div>
+            )}
+            {recentComments.length > 0 && (
+              <div class="widget">
+                <h3 class="widget-title">最近回复</h3>
+                <ul class="widget-list widget-comments">
+                  {recentComments.map((c: any) => (
+                    <li>
+                      <a href={c.permalink} class="widget-comment-link">
+                        <span class="widget-comment-author">{c.author}</span>
+                        <span class="widget-comment-excerpt">{c.excerpt}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {sidebarCategories.length > 0 && (
+              <div class="widget">
+                <h3 class="widget-title">分类</h3>
+                <ul class="widget-list">
+                  {sidebarCategories.map((cat: any) => (
+                    <li><a href={cat.permalink}>{cat.name} <span class="widget-count">{cat.count}</span></a></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {archives.length > 0 && (
+              <div class="widget">
+                <h3 class="widget-title">归档</h3>
+                <ul class="widget-list">
+                  {archives.map((a: any) => <li><a href={a.permalink}>{a.date}</a></li>)}
+                </ul>
+              </div>
+            )}
+            <div class="widget">
+              <h3 class="widget-title">其它</h3>
+              <ul class="widget-list">
+                {isLoggedIn ? (
+                  <>
+                    <li><a href={urls.adminUrl} data-no-swup>后台 ({user?.screenName || user?.name})</a></li>
+                    <li><form method="post" action={urls.logoutUrl}><button type="submit" class="logout-btn">退出登录</button></form></li>
+                  </>
+                ) : (
+                  <li><a href={urls.loginUrl} data-no-swup>登录</a></li>
+                )}
+                <li><a href={urls.feedUrl} data-no-swup>文章 RSS</a></li>
+              </ul>
+            </div>
+          </>
+        )}
+      </aside>
     </div>
 
-    {pagination.totalPages > 1 && (
-      <nav class="page-navigator">
-        {pagination.hasPrev && <a class="prev" href={pagination.prevUrl!}>&laquo; 前一页</a>}
-        {pagination.hasNext && <a class="next" href={pagination.nextUrl!}>后一页 &raquo;</a>}
-      </nav>
-    )}
-
-    {hasSidebar && (
-      <aside class="sidebar-section">
-        {recentPosts.length > 0 && (
-          <div class="widget">
-            <h3 class="widget-title">最新文章</h3>
-            <ul class="widget-list">
-              {recentPosts.map((p: any) => <li><a href={p.permalink}>{p.title}</a></li>)}
-            </ul>
-          </div>
-        )}
-        {recentComments.length > 0 && (
-          <div class="widget">
-            <h3 class="widget-title">最近回复</h3>
-            <ul class="widget-list">
-              {recentComments.map((c: any) => (
-                <li>
-                  <a href={c.permalink}>
-                    <span class="comment-user">{c.author}:</span>
-                    <span class="comment-excerpt">{c.excerpt}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {sidebarCategories.length > 0 && (
-          <div class="widget">
-            <h3 class="widget-title">分类</h3>
-            <ul class="widget-list">
-              {sidebarCategories.map((cat: any) => (
-                <li><a href={cat.permalink}>{cat.name} <span class="widget-count">{cat.count}</span></a></li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {archives.length > 0 && (
-          <div class="widget">
-            <h3 class="widget-title">归档</h3>
-            <ul class="widget-list">
-              {archives.map((a: any) => <li><a href={a.permalink}>{a.date}</a></li>)}
-            </ul>
-          </div>
-        )}
-        <div class="widget">
-          <h3 class="widget-title">其它</h3>
-          <ul class="widget-list">
-            {isLoggedIn ? (
-              <>
-                <li><a href={urls.adminUrl}>后台 ({user?.screenName || user?.name})</a></li>
-                <li><form method="post" action={urls.logoutUrl}><button type="submit" class="logout-btn">退出登录</button></form></li>
-              </>
-            ) : (
-              <li><a href={urls.loginUrl}>登录</a></li>
-            )}
-            <li><a href={urls.feedUrl}>文章 RSS</a></li>
-          </ul>
-        </div>
-      </aside>
-    )}
-
-    <footer class="page-footer">
-      <button class="theme-toggle" id="themeToggle">
-        <span id="themeIcon">🌙</span>
-        <span id="themeText">切换至暗色模式</span>
+    <footer class="page-footer" id="footer">
+      <button class="theme-toggle" id="snowiThemeToggle" type="button">
+        <span id="snowiThemeIcon">🌙</span>
+        <span id="snowiThemeText">切换至暗色模式</span>
       </button>
+
+      <p class="site-copyright">
+        &copy; {new Date().getFullYear()} <a href={urls.siteUrl}>{options.title}</a> · 一起来堆雪人！
+      </p>
     </footer>
   </div>
 
-  <script is:inline src="/js/screenshot.js"></script>
   <script is:inline src="/js/mood-player.min.js"></script>
+  <ThemeScripts siteTitle={options.title} />
   <GlobalPlayer />
 </Base>
-
-<script is:inline define:vars={{ siteTitle: options.title }}>
-  (function () {
-    var root = document.documentElement;
-    var body = document.body;
-
-    var pageEl = document.querySelector('.snowi-page');
-    if (pageEl) {
-       if (root.classList.contains('snowi-dark')) {
-          body.classList.add('dark-mode');
-       }
-    }
-
-    var themeToggle = document.getElementById('themeToggle');
-    var themeIcon = document.getElementById('themeIcon');
-    var themeText = document.getElementById('themeText');
-
-    function updateThemeUI(isDark) {
-      if (isDark) {
-        body.classList.add('dark-mode');
-        root.classList.add('snowi-dark');
-        themeIcon.innerText = '☀️';
-        themeText.innerText = '切换至亮色模式';
-      } else {
-        body.classList.remove('dark-mode');
-        root.classList.remove('snowi-dark');
-        themeIcon.innerText = '🌙';
-        themeText.innerText = '切换至暗色模式';
-      }
-    }
-
-    if (themeToggle) {
-      themeToggle.addEventListener('click', () => {
-        var isDark = !body.classList.contains('dark-mode');
-        updateThemeUI(isDark);
-        try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch (e) {}
-      });
-    }
-
-    var searchToggle = document.getElementById('snowiSearchToggle');
-    var searchForm = document.getElementById('snowiSearch');
-    if (searchToggle && searchForm) {
-      searchToggle.addEventListener('click', function(e) {
-        e.preventDefault();
-        var open = searchForm.classList.toggle('open');
-        if (open) searchForm.querySelector('input').focus();
-      });
-    }
-
-    var shareBtns = document.querySelectorAll('.share-btn');
-    var loadingIconHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:16px;height:16px;animation:spin 1s linear infinite;"><style>@keyframes spin{100%{transform:rotate(360deg)}}</style><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9"></path></svg>`;
-    var CAPTURE_PADDING = '16px 12px 20px';
-
-    function waitImageReady(img) {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise(resolve => {
-        const done = () => resolve();
-        img.addEventListener('load', done, { once: true });
-        img.addEventListener('error', done, { once: true });
-        setTimeout(done, 6000);
-      });
-    }
-
-    function createCoverDataURL(img, targetW, targetH, pixelRatio) {
-      const cw = Math.max(1, Math.round(targetW * pixelRatio));
-      const ch = Math.max(1, Math.round(targetH * pixelRatio));
-      const canvas = document.createElement('canvas');
-      canvas.width = cw;
-      canvas.height = ch;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      const iw = img.naturalWidth, ih = img.naturalHeight;
-      if (!iw || !ih) return null;
-      const targetRatio = cw / ch, srcRatio = iw / ih;
-      let sx = 0, sy = 0, sw = iw, sh = ih;
-      if (srcRatio > targetRatio) { sw = ih * targetRatio; sx = (iw - sw) / 2; } 
-      else { sh = iw / targetRatio; sy = (ih - sh) / 2; }
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
-      try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
-    }
-
-    async function snapshotCardImages(wrapper, pixelRatio) {
-      const imgs = Array.from(wrapper.querySelectorAll('img'));
-      if (imgs.length === 0) return [];
-      await Promise.all(imgs.map(waitImageReady));
-      const origPadding = wrapper.style.padding;
-      wrapper.style.padding = CAPTURE_PADDING;
-      void wrapper.offsetWidth;
-      const snapshots = imgs.map(img => {
-        const rect = img.getBoundingClientRect();
-        const w = Math.max(1, Math.round(rect.width));
-        const h = Math.max(1, Math.round(rect.height));
-        return { w, h, dataURL: createCoverDataURL(img, w, h, pixelRatio) };
-      });
-      wrapper.style.padding = origPadding;
-      return snapshots;
-    }
-
-    shareBtns.forEach(btn => {
-      btn.addEventListener('click', async function () {
-        if (this.disabled) return;
-        if (typeof html2canvas !== 'function') {
-          alert('截图组件未加载（/js/screenshot.js）');
-          return;
-        }
-        const currentWrapper = this.closest('.card-wrapper');
-        const originalHTML = this.innerHTML;
-        const computedColor = window.getComputedStyle(this).color;
-
-        this.innerHTML = loadingIconHTML;
-        this.disabled = true;
-
-        try {
-          const highResScale = (window.devicePixelRatio || 1) * 1.2;
-          const currentBg = getComputedStyle(pageEl).getPropertyValue('--bg-color').trim() || '#f2f3f5';
-          const snapshots = await snapshotCardImages(currentWrapper, highResScale);
-
-          const canvas = await html2canvas(currentWrapper, {
-            useCORS: true,
-            allowTaint: false,
-            backgroundColor: currentBg,
-            scale: highResScale,
-            dpi: 300,
-            logging: false,
-            ignoreElements: (el) => el.tagName === 'MOOD-PLAYER' || el.tagName === 'VIDEO',
-            onclone: (clonedDoc, element) => {
-              element.style.padding = CAPTURE_PADDING;
-
-              element.style.setProperty('--bg-color', currentBg);
-              element.style.setProperty('--card-bg', getComputedStyle(pageEl).getPropertyValue('--card-bg').trim());
-              element.style.setProperty('--text-main', getComputedStyle(pageEl).getPropertyValue('--text-main').trim());
-              element.style.setProperty('--text-sub', getComputedStyle(pageEl).getPropertyValue('--text-sub').trim());
-              element.style.setProperty('--footer-bg', getComputedStyle(pageEl).getPropertyValue('--footer-bg').trim());
-              element.style.setProperty('--watermark-color', getComputedStyle(pageEl).getPropertyValue('--watermark-color').trim());
-
-              const allSvgs = element.querySelectorAll('svg');
-              allSvgs.forEach(svg => svg.style.display = 'none');
-
-              const watermark = clonedDoc.createElement('div');
-              watermark.className = 'snowi-watermark';
-              watermark.innerText = '❄️ ' + siteTitle + '.';
-              element.appendChild(watermark);
-
-              const clonedBtn = element.querySelector('.share-btn');
-              if (clonedBtn) {
-                clonedBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:${computedColor};stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>`;
-                clonedBtn.style.display = 'flex';
-              }
-
-              const clonedImgs = element.querySelectorAll('img');
-              clonedImgs.forEach((img, index) => {
-                const snap = snapshots[index];
-                if (!snap) return;
-                if (snap.dataURL) img.setAttribute('src', snap.dataURL);
-                img.style.width = snap.w + 'px';
-                img.style.height = snap.h + 'px';
-                img.style.maxWidth = 'none';
-                img.style.maxHeight = 'none';
-                img.style.objectFit = 'fill';
-              });
-            }
-          });
-
-          const link = document.createElement('a');
-          link.download = 'Snowi-' + Date.now() + '.png';
-          link.href = canvas.toDataURL('image/png');
-          link.click();
-        } catch (err) {
-          console.error('截图失败:', err);
-          alert('截图生成失败，可能是组件兼容性问题。');
-        } finally {
-          this.innerHTML = originalHTML;
-          this.disabled = false;
-        }
-      });
-    });
-  })();
-</script>
-
-<style is:global>
-  html, body {
-    margin: 0; padding: 0; width: 100%; overflow-x: hidden;
-    background-color: #f2f3f5;
-  }
-
-  .snowi-page {
-    --bg-color: #f2f3f5;           
-    --card-bg: #ffffff;            
-    --text-main: #444444;          
-    --text-sub: #888888;           
-    --icon-color: #888888;         
-    --btn-hover: rgba(0,0,0,0.05);          
-    --media-bg: #eeeeee;
-    --footer-bg: #fafafa; 
-    --watermark-color: #999999;
-    --border-color: #eaeaea;
-
-    background-color: var(--bg-color);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 20px 16px;
-    color: var(--text-main);
-    min-height: 100vh;
-    box-sizing: border-box;
-  }
-
-  body.dark-mode .snowi-page, html.snowi-dark .snowi-page {
-    --bg-color: #121212;
-    --card-bg: #242426;
-    --text-main: #dcdcdc;          
-    --text-sub: #aaaaaa;
-    --icon-color: #aaaaaa;
-    --btn-hover: rgba(255,255,255,0.1);
-    --media-bg: #333333;
-    --footer-bg: #1e1e20; 
-    --watermark-color: #666666; 
-    --border-color: #333333;
-  }
-  html.snowi-dark body { background-color: #121212; }
-
-  .snowi-page * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    transition: background-color 0.3s ease, color 0.3s ease;
-  }
-
-  .snowi-page .site-header {
-    width: 100%; max-width: 440px; margin-bottom: 20px; padding: 0 4px;
-  }
-  .snowi-page .header-brand { margin-bottom: 24px; }
-  .snowi-page .site-title {
-    font-size: 32px; font-weight: 800; letter-spacing: 1px;
-    color: var(--text-main); margin-bottom: 8px; line-height: 1.2;
-  }
-  .snowi-page .site-subtitle {
-    font-size: 14px; color: var(--text-sub); font-style: italic; letter-spacing: 0.5px;
-  }
-  .snowi-page .header-nav { display: flex; gap: 12px; flex-wrap: wrap; }
-  .snowi-page .nav-item {
-    text-decoration: none; font-size: 14px; font-weight: 600;
-    color: var(--text-sub); padding: 8px 18px; border-radius: 20px;
-    background-color: transparent; transition: all 0.2s ease; cursor: pointer;
-  }
-  .snowi-page .nav-item:hover { background-color: var(--btn-hover); color: var(--text-main); }
-  .snowi-page .nav-item.active {
-    background-color: var(--card-bg); color: var(--text-main);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  }
-  body.dark-mode .snowi-page .nav-item.active { box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-
-  .snowi-page .header-search { display: none; margin-top: 16px; gap: 8px; width: 100%; }
-  .snowi-page .header-search.open { display: flex; }
-  .snowi-page .header-search input {
-    flex: 1; border: none; outline: none; background: var(--card-bg);
-    color: var(--text-main); padding: 10px 16px; border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04); font-size: 14px;
-  }
-  .snowi-page .header-search button {
-    border: none; background: var(--card-bg); color: var(--text-main);
-    padding: 10px 20px; border-radius: 12px; cursor: pointer; font-weight: 600;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  }
-
-  .snowi-page .cards-container {
-    width: 100%; max-width: 440px;
-    display: flex; flex-direction: column; gap: 8px; 
-  }
-  .snowi-page .card-wrapper {
-    padding: 12px 0; width: 100%;
-  }
-
-  .snowi-page .post-card {
-    position: relative;
-    background-color: var(--card-bg);
-    width: 100%; 
-    border-radius: 16px; 
-    padding: 16px; 
-    display: flex; 
-    flex-direction: column; 
-    gap: 12px; 
-    overflow: hidden; 
-    box-shadow: 0 2px 10px rgba(0,0,0,0.02); 
-  }
-
-  .snowi-page .card-overlay {
-    position: absolute; inset: 0; z-index: 1; display: block; border-radius: 16px;
-  }
-
-  .snowi-page .post-header {
-    position: relative; z-index: 2;
-    display: flex; justify-content: space-between; align-items: flex-start;
-  }
-  .snowi-page .header-left { display: flex; flex-direction: column; gap: 2px; }
-  .snowi-page .date-top, .snowi-page .date-bottom { display: flex; align-items: baseline; gap: 8px; }
-  .snowi-page .day-num { font-size: 22px; font-weight: 800; line-height: 1; color: var(--text-main); }
-  .snowi-page .weekday { font-size: 13px; font-weight: 700; color: var(--text-main); }
-  .snowi-page .year-month, .snowi-page .time { font-size: 11px; color: var(--text-sub); font-weight: 500; letter-spacing: 0.5px; }
-
-  .snowi-page .header-right { display: flex; align-items: center; gap: 6px; }
-  .snowi-page .author-name { font-size: 13px; font-weight: 800; color: #aaaaaa; letter-spacing: 0.5px; text-decoration: none; }
-  body.dark-mode .snowi-page .author-name { color: #888888; }
-  .snowi-page .author-avatar {
-    width: 32px; height: 32px; border-radius: 10px; object-fit: cover; background-color: var(--media-bg);
-  }
-
-  .snowi-page .post-text {
-    position: relative; z-index: 2;
-    font-size: 14px; line-height: 1.75; color: var(--text-main); word-wrap: break-word;
-  }
-  .snowi-page .post-text p { margin-bottom: 10px; }
-  .snowi-page .post-text p:last-child { margin-bottom: 0; }
-
-  .snowi-page .post-media {
-    position: relative; z-index: 2;
-    width: 100%; border-radius: 12px; overflow: hidden; background-color: var(--media-bg);
-  }
-  .snowi-page .post-media img { width: 100%; height: auto; display: block; object-fit: cover; max-height: 400px; }
-  .snowi-page .post-media .live-photo { width: 100%; background-color: var(--media-bg); }
-
-  .snowi-page .post-media-grid {
-    position: relative; z-index: 2;
-    display: grid; gap: 4px; border-radius: 12px; overflow: hidden; background-color: transparent;
-  }
-  .snowi-page .post-media-grid > * { display: block; width: 100%; height: 100%; object-fit: cover; background-color: var(--media-bg); }
-
-  .snowi-page .post-media-grid[data-count="2"] { grid-template-columns: 1fr 1fr; }
-  .snowi-page .post-media-grid[data-count="2"] > * { height: 160px; }
-  .snowi-page .post-media-grid[data-count="3"] { grid-template-columns: repeat(3, 1fr); }
-  .snowi-page .post-media-grid[data-count="3"] > * { height: 120px; }
-  .snowi-page .post-media-grid[data-count="4"] { grid-template-columns: 1fr 1fr; }
-  .snowi-page .post-media-grid[data-count="4"] > * { height: 150px; }
-  .snowi-page .post-media-grid[data-count="5"],
-  .snowi-page .post-media-grid[data-count="6"],
-  .snowi-page .post-media-grid[data-count="7"],
-  .snowi-page .post-media-grid[data-count="8"],
-  .snowi-page .post-media-grid[data-count="9"] { grid-template-columns: repeat(3, 1fr); }
-  .snowi-page .post-media-grid[data-count="5"] > *,
-  .snowi-page .post-media-grid[data-count="6"] > *,
-  .snowi-page .post-media-grid[data-count="7"] > *,
-  .snowi-page .post-media-grid[data-count="8"] > *,
-  .snowi-page .post-media-grid[data-count="9"] > * { height: 105px; }
-
-  .snowi-page .media-cell { position: relative; overflow: hidden; background-color: var(--media-bg); }
-  .snowi-page .media-cell .live-photo { width: 100%; height: 100%; }
-
-  .snowi-page .post-category {
-    position: relative; z-index: 2;
-    display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-sub); margin-top: 4px;
-  }
-  .snowi-page .post-category svg { width: 14px; height: 14px; fill: none; stroke: var(--text-sub); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .snowi-page .post-category a { text-decoration: none; color: inherit; }
-  .snowi-page .post-category a:hover { color: var(--text-main); }
-
-  /* === 极限压缩底部操作栏高度 === */
-  .snowi-page .post-actions {
-    position: relative; 
-    z-index: 2;
-    background-color: var(--footer-bg); 
-    width: calc(100% + 32px) !important;
-    margin-left: -16px !important;
-    margin-right: -16px !important;
-    margin-bottom: -16px !important;
-    margin-top: 4px;
-    /* 强制锁定高度，去除多余 padding */
-    height: 38px !important;
-    padding: 0 16px !important; 
-    border-radius: 0 0 16px 16px; 
-    display: flex !important; 
-    justify-content: flex-end !important; 
-    align-items: center; 
-    gap: 4px; 
-    align-self: stretch;
-  }
-
-  .snowi-page .action-btn {
-    background: none; border: none; cursor: pointer; padding: 0 !important; 
-    width: 28px; height: 28px; /* 固定按钮热区 */
-    display: flex; align-items: center; justify-content: center; color: var(--icon-color); transition: all 0.2s;
-    text-decoration: none; border-radius: 6px;
-  }
-  .snowi-page .action-btn:hover { background-color: var(--btn-hover); color: var(--text-main); }
-  .snowi-page .action-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-
-  .snowi-page .snowi-watermark {
-    display: block; text-align: right; font-size: 11px; font-weight: 700; 
-    color: var(--watermark-color); margin-top: 16px; letter-spacing: 1px; padding-right: 15px; 
-  }
-
-  .snowi-page .page-navigator {
-    display: flex; justify-content: center; align-items: center; gap: 12px;
-    margin: 20px 0 10px; width: 100%; max-width: 440px;
-  }
-  .snowi-page .page-navigator a {
-    text-decoration: none; font-size: 13px; font-weight: 600; color: var(--text-sub);
-    padding: 8px 16px; border-radius: 20px; background-color: var(--card-bg);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: all 0.2s;
-  }
-  .snowi-page .page-navigator a:hover { color: var(--text-main); }
-
-  .snowi-page .sidebar-section {
-    display: none;
-    width: 100%; max-width: 440px; margin-top: 24px; flex-direction: column; gap: 16px;
-  }
-
-  @media (min-width: 860px) {
-    .snowi-page .sidebar-section { display: flex; }
-  }
-
-  .snowi-page .widget {
-    background-color: var(--card-bg); border-radius: 16px; padding: 16px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.02);
-  }
-  .snowi-page .widget-title {
-    font-size: 14px; font-weight: 800; color: var(--text-main);
-    margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color);
-  }
-  .snowi-page .widget-list { list-style: none; display: flex; flex-direction: column; gap: 10px; padding: 0; }
-  .snowi-page .widget-list li a {
-    font-size: 13px; color: var(--text-sub); display: flex; justify-content: space-between; align-items: center; text-decoration: none;
-  }
-  .snowi-page .widget-list li a:hover { color: var(--text-main); }
-  .snowi-page .comment-user { font-weight: 600; color: var(--text-main); }
-  .snowi-page .comment-excerpt { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; display: block; margin-top: 4px; }
-  .snowi-page .widget-count { font-size: 11px; color: var(--text-sub); background: var(--btn-hover); padding: 2px 8px; border-radius: 10px; }
-  .snowi-page .logout-btn { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--text-sub); padding: 0; }
-  .snowi-page .logout-btn:hover { color: var(--text-main); }
-
-  .snowi-page .page-footer {
-    margin-top: 30px; margin-bottom: 40px; display: flex; justify-content: center; align-items: center;
-  }
-  .snowi-page .theme-toggle {
-    background: var(--card-bg); border: none; border-radius: 20px; padding: 10px 20px;
-    cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 8px;
-    font-size: 13px; font-weight: 600; color: var(--text-sub); transition: all 0.2s;
-  }
-  .snowi-page .theme-toggle:hover { color: var(--text-main); }
-</style>

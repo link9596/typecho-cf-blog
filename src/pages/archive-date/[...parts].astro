@@ -1,0 +1,51 @@
+---
+import { themeTemplates } from 'virtual:theme-templates';
+import { createContext } from '@/lib/context';
+import { prepareDateData, prepareNotFoundData } from '@/lib/page-data';
+
+const ctx = await createContext(Astro.locals, Astro.request);
+const { options } = ctx;
+
+const parts = (Astro.params.parts ?? '').split('/').filter(Boolean);
+const year = Number(parts[0]);
+const month = parts[1] !== undefined ? Number(parts[1]) : undefined;
+const day = parts[2] !== undefined ? Number(parts[2]) : undefined;
+
+let validDate = Number.isInteger(year) && year >= 1000 && year <= 9999 && parts.length <= 3;
+if (validDate && month !== undefined) {
+  validDate = Number.isInteger(month) && month >= 1 && month <= 12;
+}
+if (validDate && day !== undefined) {
+  validDate = month !== undefined && Number.isInteger(day) && day >= 1;
+  if (validDate && month !== undefined) {
+    const check = new Date(Date.UTC(year, month - 1, day));
+    validDate =
+      check.getUTCFullYear() === year &&
+      check.getUTCMonth() === month - 1 &&
+      check.getUTCDate() === day;
+  }
+}
+
+const activeTheme = options.theme || 'typecho-theme-minimal';
+const templates = themeTemplates[activeTheme] ?? {};
+const defaultTemplates = themeTemplates['typecho-theme-minimal']!;
+
+let Component = templates.Archive ?? defaultTemplates.Archive!;
+let result: any;
+if (!validDate) {
+  Astro.response.status = 404;
+  Component = templates.NotFound ?? defaultTemplates.NotFound!;
+  result = await prepareNotFoundData(ctx, Astro.request.url);
+} else {
+  result = await prepareDateData(
+    ctx,
+    Astro.request.url,
+    Astro.locals,
+    Astro.url,
+    year,
+    month,
+    day,
+  );
+}
+---
+<Component {...result} />

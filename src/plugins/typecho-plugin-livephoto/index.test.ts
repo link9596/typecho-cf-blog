@@ -33,6 +33,8 @@ describe('LivePhoto plugin', () => {
     expect(out).toContain('Lightbox.init');
     expect(out).toContain('var enableLivePhoto = true;');
     expect(out).toContain('var enableLightbox = true;');
+    expect(out).toContain('pageViewRaf');
+    expect(out).toContain('cancelAnimationFrame(pageViewRaf)');
   });
 
   it('archive:footer honours enableLivePhoto / enableLightbox toggles', () => {

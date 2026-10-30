@@ -3,7 +3,7 @@
  * Aggregates recent posts, comments, categories, and archives
  * Uses db.batch() to execute all queries in a single D1 round-trip.
  */
-import { eq, desc, and, gt, sql } from 'drizzle-orm';
+import { eq, desc, and, gt, sql, inArray, lte } from 'drizzle-orm';
 import type { Database } from '@/db';
 import { schema } from '@/db';
 import { buildPermalink, buildCategoryLink, buildDateLink } from '@/lib/content';
@@ -87,7 +87,14 @@ function sidebarQueries(db: SidebarDatabase) {
         text: sql<string>`substr(${schema.comments.text}, 1, 200)`,
       })
       .from(schema.comments)
-      .where(eq(schema.comments.status, 'approved'))
+      .innerJoin(schema.contents, eq(schema.comments.cid, schema.contents.cid))
+      .where(and(
+        eq(schema.comments.status, 'approved'),
+        // 仅展示公开文章/页面下的评论；logged / private / waiting 等
+        // 需要登录或尚未公开的内容不进入“最近回复”。
+        inArray(schema.contents.status, ['publish', 'hidden']),
+        lte(schema.contents.created, nowSeconds()),
+      ))
       .orderBy(desc(schema.comments.created))
       .limit(10),
 

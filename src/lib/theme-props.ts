@@ -43,6 +43,8 @@ export interface PostListItem {
   excerpt: string;
   created: number;
   commentsNum: number;
+  /** publish / logged / private … */
+  status: string;
   author: { uid: number; name: string; screenName: string; avatarUrl: string } | null;
   categories: Array<{ name: string; slug: string; permalink: string }>;
 }
@@ -73,6 +75,8 @@ export interface ThemePostProps extends ThemeBaseProps {
     hasPassword: boolean;
     /** Whether the user has supplied the correct password */
     passwordVerified: boolean;
+    /** publish / logged / private … */
+    status: string;
   };
   author: { uid: number; name: string; screenName: string; avatarUrl: string } | null;
   categories: Array<{ name: string; slug: string; permalink: string }>;
@@ -111,7 +115,7 @@ export interface ThemePageProps extends ThemeBaseProps {
 export interface ThemeArchiveProps extends ThemeBaseProps {
   /** Display title, e.g. "分类 技术 下的文章" */
   archiveTitle: string;
-  archiveType: 'category' | 'tag' | 'author' | 'search' | 'index';
+  archiveType: 'category' | 'tag' | 'author' | 'search' | 'index' | 'date';
   posts: PostListItem[];
   pagination: PaginationInfo;
 }
@@ -127,6 +131,12 @@ export interface CommentNode {
   text: string;
   created: number;
   children: CommentNode[];
+  /** 父评论上下文（仅回复评论有） */
+  replyTo?: {
+    coid: number;
+    author: string;
+    excerpt: string;
+  };
 }
 
 export interface CommentOptions {

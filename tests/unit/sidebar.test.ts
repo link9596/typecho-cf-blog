@@ -79,6 +79,29 @@ describe('loadSidebarData', () => {
     expect(data.recentComments[0].permalink).toContain('#comment-');
   });
 
+  it('excludes comments on login-only / non-public content from recent comments', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const publicPost = await testDb.insert(schema.contents).values({
+      title: 'Public', slug: 'public', created: now, type: 'post', status: 'publish',
+    }).returning({ cid: schema.contents.cid });
+    const loggedPost = await testDb.insert(schema.contents).values({
+      title: 'Logged', slug: 'logged', created: now, type: 'post', status: 'logged',
+    }).returning({ cid: schema.contents.cid });
+    const privatePost = await testDb.insert(schema.contents).values({
+      title: 'Private', slug: 'private-comments', created: now, type: 'post', status: 'private',
+    }).returning({ cid: schema.contents.cid });
+
+    await testDb.insert(schema.comments).values([
+      { cid: publicPost[0]!.cid, created: now, author: 'Public', text: 'visible', status: 'approved' },
+      { cid: loggedPost[0]!.cid, created: now, author: 'Logged', text: 'hidden by login', status: 'approved' },
+      { cid: privatePost[0]!.cid, created: now, author: 'Private', text: 'hidden by private', status: 'approved' },
+    ]);
+
+    const data = await loadSidebarData(mockPluginCtx, testDb, siteUrl);
+    expect(data.recentComments).toHaveLength(1);
+    expect(data.recentComments[0].author).toBe('Public');
+  });
+
   it('excludes non-approved comments from recent comments', async () => {
     const now = Math.floor(Date.now() / 1000);
     const post = await testDb.insert(schema.contents).values({

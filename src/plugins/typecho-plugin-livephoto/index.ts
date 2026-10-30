@@ -69,9 +69,14 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     initialize();
   }
 
-  // Swup 页面切换后重新初始化
+  // Swup 页面切换后重新初始化。
+  // 主题会同时派发 page:view / swup:page:view，两个监听不能各跑一次 initialize，
+  // 否则徽标和进度条会被销毁重建两次，播放中的 LivePhoto 会闪烁。
+  var pageViewRaf = 0;
   function onSwupPageView() {
-    requestAnimationFrame(function() {
+    if (pageViewRaf) cancelAnimationFrame(pageViewRaf);
+    pageViewRaf = requestAnimationFrame(function() {
+      pageViewRaf = 0;
       initialize();
     });
   }

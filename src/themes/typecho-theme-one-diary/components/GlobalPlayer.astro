@@ -453,6 +453,30 @@
       }
     }
 
+    function hasGlobalPlayer() {
+      var host = $(HOST_ID);
+      return !!(host && host.querySelector('mood-player'));
+    }
+
+    /*
+     * Swup 切页时，新页面里的 <mood-player> 会先渲染一帧，再被去重逻辑替换成占位，
+     * 看起来就是“占位框闪一下播放器”。在 before-swap 先把内容区播放器隐藏，
+     * after-swap 同步去重成占位后再移除隐藏类，避免这一帧。
+     */
+    document.addEventListener('astro:before-swap', function () {
+      if (hasGlobalPlayer()) {
+        document.documentElement.classList.add('is-swup-loading');
+      }
+    });
+
+    document.addEventListener('astro:after-swap', function () {
+      try {
+        dedupeContentPlayers();
+      } finally {
+        document.documentElement.classList.remove('is-swup-loading');
+      }
+    });
+
     /* 绑定 Swup / View Transitions 的切页完成事件，等 DOM 稳定后再去重 */
     function bindPageView() {
       var handler = function () { setTimeout(dedupeContentPlayers, 60); };
@@ -478,92 +502,3 @@
     log('全局播放器就绪');
   })();
 </script>
-
-<style is:global>
-  /* ---------- 全局吸附条 ---------- */
-  .global-bar {
-    position: fixed;
-    z-index: 1000;
-    pointer-events: none;
-    touch-action: pan-x;
-  }
-  .global-bar[hidden] { display: none; }
-  .global-bar.drawer-open { touch-action: auto; }
-
-  .global-host {
-    pointer-events: auto;
-    width: 100%;
-    box-shadow: 0 12px 32px rgba(15,17,26,.18);
-    will-change: transform;
-  }
-  .global-host mood-player {
-    width: 100%;
-    display: block;
-  }
-
-  @media (max-width: 768px) {
-    .global-bar {
-      left: 12px;
-      right: 12px;
-      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    }
-  }
-  @media (min-width: 769px) {
-    .global-bar {
-      right: 24px;
-      bottom: 24px;
-      width: 400px;
-      max-width: calc(100vw - 48px);
-    }
-  }
-
-  /* 手势提示 */
-  .gesture-hint {
-    position: fixed;
-    z-index: 2001;
-    padding: 4px 12px;
-    background: rgba(20,22,31,.55);
-    backdrop-filter: blur(14px) saturate(1.2);
-    -webkit-backdrop-filter: blur(14px) saturate(1.2);
-    color: #fff;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: .04em;
-    pointer-events: none;
-    opacity: 0;
-    transform: translate(-50%, 6px);
-    transition: opacity .2s, transform .2s;
-    white-space: nowrap;
-  }
-  .gesture-hint.visible {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-
-  /* 文章内占位块 */
-  .player-placeholder {
-    border-radius: 10px;
-    background: linear-gradient(135deg,
-      rgba(122,162,255,.10),
-      rgba(201,140,255,.10));
-    border: 1px dashed rgba(90,108,255,.28);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    color: rgba(15,17,26,.55);
-    user-select: none;
-    opacity: 0;
-    filter: blur(8px);
-    animation: ph-in 1280ms cubic-bezier(.32,.72,0,1) 60ms forwards;
-  }
-  .player-placeholder .ph-text {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  @keyframes ph-in {
-    to { opacity: 1; filter: blur(0); }
-  }
-</style>

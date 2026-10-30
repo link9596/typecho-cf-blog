@@ -1,1 +1,2304 @@
-.xmain{max-width:680px;margin:auto;background:#fff;padding:2rem;border-radius:12px}
+/* ==========================================================================
+   Typecho one Diary — Snowi theme
+   本文件汇总了主题各组件的样式（原分散在 *.astro 的 <style is:global> 中）。
+   合并原则：
+     · 共用样式以 components/Index.astro 为准（冲突时使用 Index 的取值）；
+     · 页面专属样式（文章正文、评论、归档、404 等）按区块保留。
+   ========================================================================== */
+
+/* ==========================================================================
+   1. 全局与变量
+   ========================================================================== */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+  background-color: #f2f3f5;
+}
+
+/* clip 不创建滚动容器，避免影响页面内定位 */
+@supports (overflow-x: clip) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+}
+
+.snowi-page {
+  --bg-color: #f2f3f5;
+  --card-bg: #ffffff;
+  --text-main: #444444;
+  --text-sub: #888888;
+  --icon-color: #888888;
+  --btn-hover: rgba(0, 0, 0, 0.05);
+  --media-bg: #eeeeee;
+  --footer-bg: #fafafa;
+  --watermark-color: #999999;
+
+  background-color: var(--bg-color);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px;
+  color: var(--text-main);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+html.snowi-dark .snowi-page {
+  --bg-color: #121212;
+  --card-bg: #242426;
+  --text-main: #dcdcdc;
+  --text-sub: #aaaaaa;
+  --icon-color: #aaaaaa;
+  --btn-hover: rgba(255, 255, 255, 0.1);
+  --media-bg: #333333;
+  --footer-bg: #1e1e20;
+  --watermark-color: #666666;
+}
+
+html.snowi-dark body {
+  background-color: #121212;
+}
+
+.snowi-page,
+.snowi-page *,
+.snowi-page *::before,
+.snowi-page *::after {
+  box-sizing: border-box;
+}
+
+.snowi-page * {
+  margin: 0;
+  padding: 0;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.snowi-page .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   2. 页首
+   ========================================================================== */
+
+.snowi-page .site-header {
+  width: 100%;
+  max-width: 440px;
+  margin-bottom: 20px;
+  padding: 0 4px;
+}
+
+.snowi-page .header-brand {
+  margin-bottom: 24px;
+}
+
+.snowi-page .site-title {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--text-main);
+  margin: 0 0 8px;
+  line-height: 1.2;
+}
+
+.snowi-page .site-subtitle {
+  font-size: 14px;
+  color: var(--text-sub);
+  font-style: italic;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.snowi-page .header-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.snowi-page .nav-item {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.2;
+  color: var(--text-sub);
+  padding: 8px 18px;
+  border: none;
+  border-radius: 20px;
+  background-color: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.snowi-page .nav-item:hover {
+  background-color: var(--btn-hover);
+  color: var(--text-main);
+}
+
+.snowi-page .nav-item.active {
+  background-color: var(--card-bg);
+  color: var(--text-main);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+html.snowi-dark .snowi-page .nav-item.active {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.snowi-page .header-search {
+  display: none;
+  margin-top: 16px;
+  gap: 8px;
+  width: 100%;
+}
+
+.snowi-page .header-search.open {
+  display: flex;
+}
+
+.snowi-page .header-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background-color: var(--card-bg);
+  color: var(--text-main);
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.snowi-page .header-search input::placeholder {
+  color: var(--text-sub);
+}
+
+.snowi-page .header-search button,
+.snowi-page .header-search .search-submit {
+  border: none;
+  background-color: var(--card-bg);
+  color: var(--text-main);
+  padding: 10px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* ==========================================================================
+   3. 页面骨架
+   ========================================================================== */
+
+.snowi-page .page-layout,
+.snowi-page .cards-container {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snowi-page .post-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snowi-page .card-wrapper {
+  padding: 12px 0;
+  width: 100%;
+}
+
+.snowi-page .post-card {
+  position: relative;
+  background-color: var(--card-bg);
+  width: 100%;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+.snowi-page .card-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  border-radius: 16px;
+}
+
+/* ==========================================================================
+   4. 卡片共用（日期 / 作者 / 标题 / 底部操作）
+   ========================================================================== */
+
+.snowi-page .post-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.snowi-page .header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.snowi-page .date-top,
+.snowi-page .date-bottom {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.snowi-page .day-num {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-main);
+}
+
+.snowi-page .weekday {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.snowi-page .year-month,
+.snowi-page .time {
+  font-size: 11px;
+  color: var(--text-sub);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+/* 私密 / 仅登录可见标签：紧跟时间，极小号灰底 */
+.snowi-page .visibility-tag {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 2px;
+  margin-left: -4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background-color: var(--btn-hover);
+  color: var(--text-sub);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.snowi-page .visibility-tag svg {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+}
+
+.snowi-page .header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.snowi-page .author-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: #aaaaaa;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.snowi-dark .snowi-page .author-name {
+  color: #888888;
+}
+
+.snowi-page .author-name:hover {
+  color: var(--text-main);
+}
+
+.snowi-page .author-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  object-fit: cover;
+  background-color: var(--media-bg);
+  display: block;
+}
+
+.snowi-page .author-avatar-link {
+  display: flex;
+  flex-shrink: 0;
+  border-radius: 10px;
+  text-decoration: none;
+}
+
+/* 独立页面：标题放在卡片右上角（原 PAGE 标签位置） */
+.snowi-page .page-header .header-right {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.snowi-page .page-heading {
+  max-width: 100%;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.45;
+  letter-spacing: 0.3px;
+  color: var(--text-main);
+  text-align: right;
+  word-break: break-word;
+}
+
+.snowi-page .page-heading a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.snowi-page .post-title {
+  position: relative;
+  z-index: 2;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.45;
+  color: var(--text-main);
+  letter-spacing: 0.3px;
+  margin: 0;
+  word-break: break-word;
+}
+
+.snowi-page .post-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.snowi-page .cards-container .post-title a:hover {
+  color: var(--text-sub);
+}
+
+/* 文章页标题：放在正文末尾，右对齐的浅色书名号标题 */
+.snowi-page .post-title-end {
+  align-self: flex-end;
+  max-width: 100%;
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.3px;
+  color: var(--text-sub);
+  text-align: right;
+  word-break: break-word;
+}
+
+/* 底部操作栏（Index 的压缩高度方案） */
+.snowi-page .post-actions {
+  position: relative;
+  z-index: 2;
+  background-color: var(--footer-bg);
+  width: calc(100% + 32px);
+  margin-left: -16px;
+  margin-right: -16px;
+  margin-bottom: -16px;
+  margin-top: 4px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 0 0 16px 16px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  align-self: stretch;
+}
+
+/* 28px 热区；带评论数的按钮可自然加宽（Index 原为固定 28px） */
+.snowi-page .action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 6px;
+  width: auto;
+  min-width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--icon-color);
+  text-decoration: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+  border-radius: 6px;
+}
+
+.snowi-page .action-btn:hover {
+  background-color: var(--btn-hover);
+  color: var(--text-main);
+}
+
+.snowi-page .action-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@keyframes snowi-spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* 分享截图时的页面级提示；位于被截图节点之外，不会进入图片 */
+.snowi-capture-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: rgba(0, 0, 0, 0.35);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.snowi-capture-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: snowi-spin 0.8s linear infinite;
+}
+
+/* Swup 换页后的淡入（兜底缓存页面上缺失的 in 动画） */
+@keyframes snowi-page-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.snowi-page-in {
+  animation: snowi-page-in 0.4s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .snowi-capture-spinner {
+    animation: none;
+  }
+
+  .snowi-page-in {
+    animation: none !important;
+  }
+}
+
+.snowi-page .action-count {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* “阅读全文”按钮靠右 */
+.snowi-page .read-more-btn {
+  margin-left: auto;
+}
+
+.snowi-page .snowi-watermark {
+  display: block;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--watermark-color);
+  margin-top: 16px;
+  letter-spacing: 1px;
+  padding-right: 15px;
+}
+
+/* ==========================================================================
+   5. 首页卡片：摘要 / 图片 / Live Photo
+   ========================================================================== */
+
+.snowi-page .post-text {
+  position: relative;
+  z-index: 2;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-main);
+  word-wrap: break-word;
+}
+
+.snowi-page .post-text p {
+  margin-bottom: 10px;
+}
+
+.snowi-page .post-text p:last-child {
+  margin-bottom: 0;
+}
+
+.snowi-page .post-text a {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--text-sub);
+}
+
+.snowi-page .post-text ul,
+.snowi-page .post-text ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.snowi-page .post-media {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: var(--media-bg);
+}
+
+.snowi-page .post-media img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  max-height: 400px;
+}
+
+.snowi-page .post-media-grid {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: transparent;
+}
+
+.snowi-page .post-media-grid > * {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  height: auto;
+  object-fit: cover;
+  background-color: var(--media-bg);
+}
+
+.snowi-page .post-media-grid[data-count="2"] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.snowi-page .post-media-grid[data-count="3"] {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.snowi-page .post-media-grid[data-count="4"] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.snowi-page .post-media-grid[data-count="5"],
+.snowi-page .post-media-grid[data-count="6"],
+.snowi-page .post-media-grid[data-count="7"],
+.snowi-page .post-media-grid[data-count="8"],
+.snowi-page .post-media-grid[data-count="9"] {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.snowi-page .media-cell {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--media-bg);
+}
+
+/* ---------- Live Photo（兼容组件生成的 padding-top 容器与手动 HTML） ---------- */
+.live-photo {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--media-bg, #eeeeee);
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y pinch-zoom;
+}
+
+/* 没有内联比例时给默认 3:4，避免容器高度为 0 */
+.live-photo:where(:not([style*="padding-top"]):not([style*="aspect-ratio"])) {
+  aspect-ratio: 3 / 4;
+}
+
+:is(.snowi-page .live-photo, .lightbox-clone-img) .live-photo-img,
+:is(.snowi-page .live-photo, .lightbox-clone-img) .live-photo-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  max-width: none;
+  max-height: none;
+  border-radius: inherit;
+  object-fit: cover;
+  pointer-events: none;
+  transform-origin: center center;
+  user-select: none;
+}
+
+:is(.snowi-page .live-photo, .lightbox-clone-img) .live-photo-img {
+  z-index: 2;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.3s linear, transform 0.3s linear;
+}
+
+:is(.snowi-page .live-photo, .lightbox-clone-img) .live-photo-video {
+  z-index: 1;
+  transform: scale(1);
+  background-color: #000;
+  transition: transform 0.3s linear;
+}
+
+/* 网格里的 live photo 高度由单元格决定 */
+.snowi-page .media-cell .live-photo {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.live-photo.is-playing .live-photo-img {
+  opacity: 0;
+  transform: scale(1.08);
+}
+
+.live-photo.is-playing .live-photo-video {
+  transform: scale(1.08);
+}
+
+/* 实况角标（由 /js/live.js 注入） */
+.live-photo-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 2px 8px 2px 2px;
+  border-radius: 5px;
+  pointer-events: none;
+}
+
+.live-photo-icon {
+  position: relative;
+  width: 20px;
+  height: 20px;
+}
+
+.live-photo-icon-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.live-photo-disabled-icon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.live-photo-text {
+  margin-top: 1px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: #000;
+}
+
+.live-photo-progress-ring {
+  transition: stroke-dashoffset 0.2s linear;
+}
+
+/* 正文 / 摘要中的 Live Photo 间距 */
+.snowi-page .post-content .live-photo {
+  margin: 12px 0;
+}
+
+.snowi-page .post-excerpt .live-photo {
+  margin: 8px 0;
+}
+
+/* ==========================================================================
+   6. 文章 / 独立页面详情
+   ========================================================================== */
+
+.snowi-page .post-content {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-main);
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.snowi-page .post-content p {
+  margin: 0 0 10px;
+}
+
+.snowi-page .post-content p:last-child {
+  margin-bottom: 0;
+}
+
+.snowi-page .post-content a {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--text-sub);
+}
+
+.snowi-page .post-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  display: block;
+  margin: 12px 0;
+  background-color: var(--media-bg);
+}
+
+.snowi-page .post-content blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--text-sub);
+  background-color: var(--footer-bg);
+  border-radius: 0 10px 10px 0;
+  color: var(--text-sub);
+}
+
+.snowi-page .post-content ul,
+.snowi-page .post-content ol {
+  margin: 10px 0;
+  padding-left: 22px;
+}
+
+.snowi-page .post-content li {
+  margin: 4px 0;
+}
+
+.snowi-page .post-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background-color: var(--footer-bg);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.snowi-page .post-content pre {
+  background-color: var(--footer-bg);
+  padding: 14px;
+  border-radius: 12px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.snowi-page .post-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.snowi-page .post-content hr {
+  border: none;
+  border-top: 1px solid var(--btn-hover);
+  margin: 18px 0;
+}
+
+.snowi-page .post-content h1,
+.snowi-page .post-content h2,
+.snowi-page .post-content h3,
+.snowi-page .post-content h4 {
+  margin: 18px 0 10px;
+  line-height: 1.4;
+  color: var(--text-main);
+}
+
+.snowi-page .post-content h1 {
+  font-size: 17px;
+}
+
+.snowi-page .post-content h2 {
+  font-size: 16px;
+}
+
+.snowi-page .post-content h3 {
+  font-size: 15px;
+}
+
+.snowi-page .post-content h4 {
+  font-size: 14px;
+}
+
+.snowi-page .post-content mood-player {
+  position: relative;
+  z-index: 3;
+  display: block;
+  margin: 12px 0;
+}
+
+/* 密码保护 */
+.snowi-page .post-password {
+  padding: 18px;
+  background-color: var(--footer-bg);
+  border-radius: 12px;
+}
+
+.snowi-page .post-password-tip {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--text-sub);
+}
+
+.snowi-page .post-password-form {
+  display: flex;
+  gap: 8px;
+}
+
+.snowi-page .post-password-form input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background-color: var(--card-bg);
+  color: var(--text-main);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.snowi-page .post-password-form .submit {
+  border: none;
+  cursor: pointer;
+  background-color: var(--card-bg);
+  color: var(--text-main);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* 分类 / 标签 */
+.snowi-page .post-taxonomy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.snowi-page .post-category {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-sub);
+  margin-top: 4px;
+}
+
+.snowi-page .post-category svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--text-sub);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.snowi-page .post-category a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.snowi-page .post-category a:hover {
+  color: var(--text-main);
+}
+
+.snowi-page .post-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.snowi-page .tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background-color: var(--btn-hover);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.snowi-page .tag-pill:hover {
+  color: var(--text-main);
+  background-color: var(--media-bg);
+}
+
+/* ==========================================================================
+   7. 上下篇导航
+   ========================================================================== */
+
+.snowi-page .post-near-card {
+  background-color: var(--card-bg);
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+.snowi-page .near-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  text-decoration: none;
+  color: var(--text-main);
+  transition: all 0.2s;
+}
+
+.snowi-page .near-next {
+  text-align: right;
+}
+
+.snowi-page .near-item.disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.snowi-page .near-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-sub);
+}
+
+.snowi-page .near-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-main);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.snowi-page .near-item:hover .near-title {
+  color: var(--text-sub);
+}
+
+/* ==========================================================================
+   8. 分页
+   ========================================================================== */
+
+.snowi-page .page-navigator {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 10px;
+  width: 100%;
+  max-width: 440px;
+}
+
+.snowi-page .page-navigator a {
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-sub);
+  padding: 8px 16px;
+  border-radius: 20px;
+  background-color: var(--card-bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s;
+}
+
+.snowi-page .page-navigator a:hover {
+  color: var(--text-main);
+}
+
+/* ==========================================================================
+   9. 评论区（文章 / 独立页面）
+   ========================================================================== */
+
+.snowi-page .comments-card {
+  gap: 14px;
+}
+
+.snowi-page .comments-title,
+.snowi-page .respond-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.snowi-page .comments-title::before,
+.snowi-page .respond-title::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background-color: var(--text-sub);
+  opacity: 0.6;
+}
+
+.snowi-page .comments-closed {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+.snowi-page .comment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.snowi-page .comment-list > li {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.snowi-page .comment-list img {
+  border-radius: 10px;
+  background-color: var(--media-bg);
+}
+
+.snowi-page .comment-list a {
+  color: var(--text-main);
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.snowi-page .comment-list a:hover {
+  color: var(--text-sub);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.snowi-page .comment-list .comment-reply,
+.snowi-page .comment-list .reply {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.snowi-page .comment-list .comment-time,
+.snowi-page .comment-list time {
+  font-size: 11px;
+  color: var(--text-sub);
+  letter-spacing: 0.3px;
+}
+
+/* 评论分页 */
+.snowi-page .comment-page-navigator {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  max-width: none;
+}
+
+.snowi-page .comment-page-navigator a,
+.snowi-page .comment-page-navigator span {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background-color: var(--btn-hover);
+  color: var(--text-sub);
+  text-decoration: none;
+  box-shadow: none;
+  transition: all 0.2s;
+}
+
+.snowi-page .comment-page-navigator a:hover {
+  color: var(--text-main);
+  background-color: var(--media-bg);
+}
+
+.snowi-page .comment-page-navigator span.current {
+  background-color: var(--text-main);
+  color: var(--card-bg);
+}
+
+/* 评论表单 */
+.snowi-page .respond {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--btn-hover);
+  padding-top: 14px;
+}
+
+.snowi-page .cancel-comment-reply {
+  min-height: 0;
+}
+
+.snowi-page .cancel-comment-reply a {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  text-decoration: none;
+}
+
+.snowi-page .cancel-comment-reply a:hover {
+  color: var(--text-main);
+}
+
+.snowi-page .respond-identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+.snowi-page .respond-identity a {
+  color: var(--text-main);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.snowi-page .logout-form {
+  display: inline;
+  margin: 0;
+}
+
+.snowi-page .logout-form button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-sub);
+  transition: color 0.2s;
+}
+
+.snowi-page .logout-form button:hover {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.snowi-page .comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+}
+
+.snowi-page .comment-form .form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.snowi-page .comment-form .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.snowi-page .comment-form label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  letter-spacing: 0.3px;
+}
+
+.snowi-page .comment-form label.required::after {
+  content: " *";
+  color: #d9534f;
+}
+
+.snowi-page .comment-form input.text,
+.snowi-page .comment-form textarea {
+  width: 100%;
+  border: none;
+  outline: none;
+  background-color: var(--footer-bg);
+  color: var(--text-main);
+  padding: 11px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.snowi-page .comment-form input.text:focus,
+.snowi-page .comment-form textarea:focus {
+  box-shadow: 0 0 0 2px var(--btn-hover);
+}
+
+.snowi-page .comment-form input::placeholder,
+.snowi-page .comment-form textarea::placeholder {
+  color: var(--text-sub);
+}
+
+.snowi-page .comment-form .form-submit {
+  margin: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.snowi-page .comment-form .submit {
+  border: none;
+  cursor: pointer;
+  background-color: var(--text-main);
+  color: var(--card-bg);
+  padding: 10px 22px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: 0.5px;
+  transition: opacity 0.2s;
+}
+
+.snowi-page .comment-form .submit:hover {
+  opacity: 0.85;
+}
+
+/* ==========================================================================
+   10. 归档页
+   ========================================================================== */
+
+.snowi-page .archive-header-card {
+  gap: 8px;
+  align-items: flex-start;
+  padding: 20px 18px;
+}
+
+.snowi-page .archive-type-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--text-sub);
+  padding: 4px 10px;
+  border-radius: 10px;
+  background-color: var(--btn-hover);
+}
+
+.snowi-page .archive-title {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-main);
+  margin: 0;
+  letter-spacing: 0.3px;
+  word-break: break-word;
+}
+
+.snowi-page .archive-count {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 0;
+  letter-spacing: 0.3px;
+}
+
+.snowi-page .archive-count strong {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.snowi-page .empty-card {
+  align-items: center;
+  text-align: center;
+  padding: 32px 20px;
+  gap: 10px;
+}
+
+.snowi-page .empty-icon {
+  font-size: 36px;
+  line-height: 1;
+  opacity: 0.6;
+}
+
+.snowi-page .empty-text {
+  font-size: 14px;
+  color: var(--text-sub);
+  margin: 0;
+  line-height: 1.7;
+}
+
+/* 摘要 */
+.snowi-page .post-excerpt {
+  position: relative;
+  z-index: 2;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-main);
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.snowi-page .post-excerpt p {
+  margin: 0 0 10px;
+}
+
+.snowi-page .post-excerpt p:last-child {
+  margin-bottom: 0;
+}
+
+.snowi-page .post-excerpt a {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--text-sub);
+}
+
+.snowi-page .post-excerpt img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  display: block;
+  margin: 8px 0;
+  background-color: var(--media-bg);
+}
+
+.snowi-page .post-excerpt blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--text-sub);
+  background-color: var(--footer-bg);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-sub);
+}
+
+.snowi-page .post-excerpt code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background-color: var(--footer-bg);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.snowi-page .post-excerpt pre {
+  background-color: var(--footer-bg);
+  padding: 12px;
+  border-radius: 10px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.snowi-page .post-excerpt pre code {
+  background: none;
+  padding: 0;
+}
+
+/* 全局 reset 会清掉列表缩进，这里为摘要中的富文本补回 */
+.snowi-page .post-excerpt ul,
+.snowi-page .post-excerpt ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.snowi-page .post-excerpt mood-player {
+  position: relative;
+  z-index: 3;
+  display: block;
+  margin: 8px 0;
+}
+
+/* ==========================================================================
+   11. 404 页
+   ========================================================================== */
+
+.snowi-page .notfound-container {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.snowi-page .notfound-card {
+  align-items: center;
+  text-align: center;
+  padding: 28px 20px 16px;
+  gap: 14px;
+}
+
+.snowi-page .notfound-header {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.snowi-page .status-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--text-sub);
+  padding: 5px 12px;
+  border-radius: 12px;
+  background-color: var(--btn-hover);
+}
+
+.snowi-page .notfound-code {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1;
+  margin: 6px 0 2px;
+  user-select: none;
+}
+
+.snowi-page .code-digit {
+  font-size: 64px;
+  font-weight: 900;
+  letter-spacing: -2px;
+  color: var(--text-main);
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+html.snowi-dark .snowi-page .code-digit {
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.snowi-page .code-digit-zero {
+  color: transparent;
+  -webkit-text-stroke: 3px var(--text-main);
+  text-stroke: 3px var(--text-main);
+}
+
+.snowi-page .notfound-title {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-main);
+  margin: 0;
+  letter-spacing: 0.3px;
+  word-break: break-word;
+}
+
+.snowi-page .notfound-tip {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+.snowi-page .notfound-search {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.snowi-page .notfound-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background-color: var(--footer-bg);
+  color: var(--text-main);
+  padding: 11px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: box-shadow 0.2s;
+}
+
+.snowi-page .notfound-search input:focus {
+  box-shadow: 0 0 0 2px var(--btn-hover);
+}
+
+.snowi-page .notfound-search input::placeholder {
+  color: var(--text-sub);
+}
+
+.snowi-page .notfound-search .submit {
+  border: none;
+  cursor: pointer;
+  background-color: var(--text-main);
+  color: var(--card-bg);
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: 0.5px;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.snowi-page .notfound-search .submit:hover {
+  opacity: 0.85;
+}
+
+.snowi-page .notfound-actions {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.snowi-page .notfound-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: 20px;
+  background-color: var(--btn-hover);
+  color: var(--text-sub);
+  transition: all 0.2s;
+}
+
+.snowi-page .notfound-btn:hover {
+  color: var(--text-main);
+  background-color: var(--media-bg);
+}
+
+.snowi-page .notfound-btn.primary {
+  background-color: var(--text-main);
+  color: var(--card-bg);
+}
+
+.snowi-page .notfound-btn.primary:hover {
+  opacity: 0.85;
+  background-color: var(--text-main);
+  color: var(--card-bg);
+}
+
+/* 404 卡片底部的提示条需要居中铺满，覆盖通用操作栏的高度方案 */
+.snowi-page .notfound-card .post-actions {
+  width: 100%;
+  height: auto;
+  margin: 16px -20px -16px -20px;
+  padding: 10px 20px;
+  justify-content: center;
+  align-self: auto;
+}
+
+.snowi-page .action-hint {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--watermark-color);
+}
+
+/* ==========================================================================
+   12. 侧边栏
+   ========================================================================== */
+
+.snowi-page .sidebar-section {
+  display: none;
+  width: 100%;
+  max-width: 440px;
+  margin-top: 24px;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.snowi-page .widget {
+  background-color: var(--card-bg);
+  border-radius: 16px;
+  padding: 0 16px 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+/* 用与卡片底部操作栏同色的顶部色带代替分割线 */
+.snowi-page .widget-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0 -16px 12px;
+  padding: 10px 16px;
+  background-color: var(--footer-bg);
+}
+
+.snowi-page .widget-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+}
+
+.snowi-page .widget-list li a {
+  font-size: 13px;
+  color: var(--text-sub);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-decoration: none;
+}
+
+.snowi-page .widget-list li a:hover {
+  color: var(--text-main);
+}
+
+.snowi-page .widget-count {
+  font-size: 11px;
+  color: var(--text-sub);
+  background: var(--btn-hover);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.snowi-page .logout-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-sub);
+  padding: 0;
+}
+
+.snowi-page .logout-btn:hover {
+  color: var(--text-main);
+}
+
+/* Post / Page / Archive 使用的评论与分类小部件 */
+.snowi-page .widget-list li a.widget-comment-link {
+  display: block;
+  color: var(--text-sub);
+  text-decoration: none;
+}
+
+.snowi-page .widget-list li a.widget-comment-link:hover {
+  text-decoration: none;
+}
+
+.snowi-page .widget-comment-author {
+  color: var(--text-main);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.snowi-page .widget-comment-excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-sub);
+}
+
+/* ==========================================================================
+   13. 页脚
+   ========================================================================== */
+
+.snowi-page .page-footer {
+  margin-top: 30px;
+  margin-bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 440px;
+}
+
+.snowi-page .theme-toggle {
+  background-color: var(--card-bg);
+  border: none;
+  border-radius: 20px;
+  padding: 10px 20px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-sub);
+  transition: all 0.2s;
+}
+
+.snowi-page .theme-toggle:hover {
+  color: var(--text-main);
+}
+
+.snowi-page .site-copyright {
+  font-size: 11px;
+  color: var(--text-sub);
+  margin: 0;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+.snowi-page .site-copyright a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.snowi-page .site-copyright a:hover {
+  color: var(--text-main);
+}
+
+/* ==========================================================================
+   14. CommentList 组件
+   ========================================================================== */
+
+.snowi-page .comment-body {
+  background-color: var(--footer-bg);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.snowi-page .comment-main {
+  background-color: transparent;
+  border-radius: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.snowi-page .comment-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.snowi-page .comment-head .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  object-fit: cover;
+  background-color: var(--media-bg);
+  flex-shrink: 0;
+  display: block;
+}
+
+.snowi-page .comment-head-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.snowi-page .comment-head .fn {
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snowi-page .comment-head .fn a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.snowi-page .comment-head .fn a:hover {
+  color: var(--text-sub);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.snowi-page .comment-head .comment-time {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: var(--text-sub);
+}
+
+/* 回复引用：显示被回复用户和父评论摘要 */
+.snowi-page .comment-reply-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border-left: 2px solid var(--text-sub);
+  border-radius: 0 6px 6px 0;
+  background-color: var(--btn-hover);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-sub);
+}
+
+.snowi-page .comment-reply-context .reply-label {
+  flex-shrink: 0;
+}
+
+.snowi-page .comment-reply-context .reply-author {
+  color: var(--text-main);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.snowi-page .comment-reply-context .reply-author:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.snowi-page .comment-reply-context .reply-excerpt {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snowi-page .comment-content {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.snowi-page .comment-content p {
+  margin: 0 0 8px;
+}
+
+.snowi-page .comment-content p:last-child {
+  margin-bottom: 0;
+}
+
+.snowi-page .comment-content a {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--text-sub);
+  word-break: break-word;
+}
+
+.snowi-page .comment-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 6px 0;
+  display: block;
+  background-color: var(--media-bg);
+}
+
+.snowi-page .comment-content blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--text-sub);
+  background-color: var(--card-bg);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-sub);
+}
+
+.snowi-page .comment-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background-color: var(--card-bg);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.snowi-page .comment-content pre {
+  background-color: var(--card-bg);
+  padding: 12px;
+  border-radius: 10px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.snowi-page .comment-content pre code {
+  background: none;
+  padding: 0;
+}
+
+/* 全局 reset 会清掉列表缩进，这里为评论正文补回 */
+.snowi-page .comment-content ul,
+.snowi-page .comment-content ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.snowi-page .comment-reply {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.snowi-page .comment-reply-link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  text-decoration: none;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background-color: var(--btn-hover);
+  transition: all 0.2s;
+}
+
+.snowi-page .comment-reply-link:hover {
+  color: var(--text-main);
+  background-color: var(--media-bg);
+}
+
+.snowi-page .comment-children {
+  margin-top: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--btn-hover);
+}
+
+/* 最多只保留一层缩进：更深层的回复不再继续缩进/加边框 */
+.snowi-page .comment-children .comment-children {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.snowi-page .comment-body > .respond {
+  margin-top: 4px;
+  background-color: var(--card-bg);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.snowi-page .comment-body > .respond .respond-title {
+  font-size: 14px;
+}
+
+/* ==========================================================================
+   15. GlobalPlayer（全局吸附播放器）
+   ========================================================================== */
+
+.global-bar {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  touch-action: pan-x;
+}
+
+.global-bar[hidden] {
+  display: none;
+}
+
+.global-bar.drawer-open {
+  touch-action: auto;
+}
+
+.global-host {
+  pointer-events: auto;
+  width: 100%;
+  box-shadow: 0 12px 32px rgba(15, 17, 26, 0.18);
+  will-change: transform;
+}
+
+.global-host mood-player {
+  width: 100%;
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .global-bar {
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (min-width: 769px) {
+  .global-bar {
+    right: 24px;
+    bottom: 24px;
+    width: 400px;
+    max-width: calc(100vw - 48px);
+  }
+}
+
+.gesture-hint {
+  position: fixed;
+  z-index: 2001;
+  padding: 4px 12px;
+  background: rgba(20, 22, 31, 0.55);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity 0.2s, transform 0.2s;
+  white-space: nowrap;
+}
+
+.gesture-hint.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.player-placeholder {
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(122, 162, 255, 0.1), rgba(201, 140, 255, 0.1));
+  border: 1px dashed rgba(90, 108, 255, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: rgba(15, 17, 26, 0.55);
+  user-select: none;
+  opacity: 0;
+  filter: blur(8px);
+  animation: ph-in 1280ms cubic-bezier(0.32, 0.72, 0, 1) 60ms forwards;
+}
+
+.player-placeholder .ph-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Swup 切页期间先藏住内容区播放器，等 GlobalPlayer 去重为占位后再显示 */
+html.is-swup-loading .snowi-page mood-player {
+  visibility: hidden !important;
+}
+
+@keyframes ph-in {
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+/* ==========================================================================
+   16. 响应式
+   ========================================================================== */
+
+@media (min-width: 860px) {
+  /* 宽屏：内容与侧边栏并排，侧边栏固定在右侧 */
+  .snowi-page:has(> .page-layout) > .site-header,
+  .snowi-page:has(> .page-layout) > .page-footer {
+    max-width: 752px;
+  }
+
+  .snowi-page:has(> .page-layout > .sidebar-section.sidebar-empty) > .site-header,
+  .snowi-page:has(> .page-layout > .sidebar-section.sidebar-empty) > .page-footer {
+    max-width: 440px;
+  }
+
+  .snowi-page .page-layout {
+    max-width: 752px;
+    display: grid;
+    grid-template-columns: minmax(0, 440px) 280px;
+    column-gap: 32px;
+    row-gap: 0;
+    justify-content: center;
+    align-items: start;
+  }
+
+  .snowi-page .page-layout:has(> .sidebar-section.sidebar-empty) {
+    grid-template-columns: minmax(0, 440px);
+  }
+
+  .snowi-page .page-layout > .post-container,
+  .snowi-page .page-layout > .cards-container {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .snowi-page .page-layout > .sidebar-section {
+    display: flex;
+    grid-column: 2;
+    grid-row: 1;
+    margin-top: 12px;
+    align-self: start;
+  }
+
+  .snowi-page .sidebar-section.sidebar-empty {
+    display: none;
+  }
+}
+
+@media (max-width: 859px) {
+  .snowi-page .sidebar-section {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .snowi-page {
+    padding: 40px 24px 48px;
+  }
+
+  .snowi-page .notfound-container,
+  .snowi-page:has(> .page-layout > .notfound-container) > .site-header,
+  .snowi-page:has(> .page-layout > .notfound-container) > .page-footer {
+    max-width: 520px;
+  }
+
+  .snowi-page:has(> .page-layout > .notfound-container) > .page-layout {
+    max-width: 520px;
+    grid-template-columns: minmax(0, 520px);
+  }
+
+  .snowi-page .code-digit {
+    font-size: 80px;
+  }
+
+  .snowi-page .code-digit-zero {
+    -webkit-text-stroke: 4px var(--text-main);
+    text-stroke: 4px var(--text-main);
+  }
+}
+
+@media (max-width: 480px) {
+  .snowi-page {
+    padding: 16px 12px 20px;
+  }
+
+  .snowi-page .site-title {
+    font-size: 28px;
+  }
+
+  .snowi-page .archive-title {
+    font-size: 18px;
+  }
+
+  .snowi-page .author-name {
+    max-width: 80px;
+  }
+
+  /* 窄屏也保持上下篇并排，不换行 */
+  .snowi-page .post-near-card {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .snowi-page .notfound-card {
+    padding: 24px 16px 16px;
+  }
+
+  .snowi-page .notfound-card .post-actions {
+    margin: 16px -16px -16px -16px;
+    padding: 10px 16px;
+  }
+
+  .snowi-page .code-digit {
+    font-size: 52px;
+  }
+
+  .snowi-page .code-digit-zero {
+    -webkit-text-stroke: 2.5px var(--text-main);
+    text-stroke: 2.5px var(--text-main);
+  }
+
+  .snowi-page .notfound-search {
+    flex-direction: column;
+  }
+
+  .snowi-page .notfound-search .submit {
+    width: 100%;
+  }
+}
