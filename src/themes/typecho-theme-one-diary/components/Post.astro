@@ -17,6 +17,7 @@ import CommentList from './CommentList.astro';
 import type { ThemePostProps } from '@/lib/theme-props';
 import { buildAuthorLink } from '@/lib/content';
 import GlobalPlayer from './GlobalPlayer.astro';
+import ThemeScripts from './ThemeScripts.astro';
 
 type Props = ThemePostProps;
 
@@ -98,7 +99,7 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
 <!-- 提前应用暗色主题，避免首屏闪烁 -->
 <script is:inline>
   try {
-    if (localStorage.getItem('snowi-theme') === 'dark') {
+    if ((localStorage.getItem('snowi-theme') || localStorage.getItem('theme')) === 'dark') {
       document.documentElement.classList.add('snowi-dark');
     }
   } catch (e) {}
@@ -116,7 +117,7 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
   <div class="snowi-page">
 
     <!-- ================= 页首 ================= -->
-    <header class="site-header">
+    <header class="site-header" id="header">
       <div class="header-brand">
         <h1 class="site-title">{options.title}</h1>
         {options.description && <p class="site-subtitle">{options.description}</p>}
@@ -147,7 +148,7 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
     <!-- ================= 主体：文章 + 侧边栏 ================= -->
     <div class="page-layout">
 
-      <main class="post-container" role="main">
+      <main class="post-container" id="main" role="main">
 
         <!-- ========== 文章卡片 ========== -->
         <div class="card-wrapper">
@@ -394,35 +395,6 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
               ) : (
                 <h3 class="comments-closed">评论已关闭</h3>
               )}
-
-              <script is:inline>
-                var TypechoComment = {
-                  dom: function (id) { return document.getElementById(id); },
-                  reply: function (commentId, coid) {
-                    var comment = this.dom(commentId);
-                    var respond = this.dom('respond');
-                    var cancelLink = this.dom('cancel-comment-reply-link');
-                    var parentInput = this.dom('comment-parent');
-                    if (!comment || !respond || !parentInput) return true;
-                    parentInput.value = coid;
-                    comment.appendChild(respond);
-                    if (cancelLink) cancelLink.style.display = '';
-                    try { this.dom('textarea').focus(); } catch (e) {}
-                    return false;
-                  },
-                  cancelReply: function () {
-                    var respond = this.dom('respond');
-                    var cancelLink = this.dom('cancel-comment-reply-link');
-                    var parentInput = this.dom('comment-parent');
-                    var comments = this.dom('comments');
-                    if (!respond || !comments || !parentInput) return false;
-                    parentInput.value = '0';
-                    if (cancelLink) cancelLink.style.display = 'none';
-                    comments.appendChild(respond);
-                    return false;
-                  }
-                };
-              </script>
             </section>
           </div>
         )}
@@ -430,7 +402,7 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
       </main>
 
       <!-- ================= 侧边栏 ================= -->
-      <aside class="sidebar-section" role="complementary">
+      <aside class:list={['sidebar-section', { 'sidebar-empty': !hasSidebar }]} id="secondary" role="complementary">
         {recentPosts.length > 0 && (
           <section class="widget">
             <h3 class="widget-title">最新文章</h3>
@@ -513,7 +485,7 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
     </div>
 
     <!-- ================= 页脚 ================= -->
-    <footer class="page-footer">
+    <footer class="page-footer" id="footer">
       <button class="theme-toggle" id="snowiThemeToggle" type="button">
         <span id="snowiThemeIcon">🌙</span>
         <span id="snowiThemeText">切换至暗色模式</span>
@@ -531,214 +503,5 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
 
   <!-- 全局吸附播放器：搬迁逻辑 + 吸附条，位于内容之外，切页不被 Swup 替换 -->
   <GlobalPlayer />
+  <ThemeScripts siteTitle={options.title} />
 </Base>
-
-<!-- ==================================================================== -->
-<!-- 交互脚本                                                             -->
-<!-- ==================================================================== -->
-<script is:inline define:vars={{ siteTitle: options.title }}>
-  (function () {
-    var page = document.querySelector('.snowi-page');
-    if (!page) return;
-
-    /* ---------------- 主题切换 ---------------- */
-    var root = document.documentElement;
-    var toggle = document.getElementById('snowiThemeToggle');
-    var iconEl = document.getElementById('snowiThemeIcon');
-    var textEl = document.getElementById('snowiThemeText');
-
-    function applyTheme(isDark) {
-      if (isDark) root.classList.add('snowi-dark');
-      else root.classList.remove('snowi-dark');
-      if (iconEl) iconEl.textContent = isDark ? '☀️' : '🌙';
-      if (textEl) textEl.textContent = isDark ? '切换至亮色模式' : '切换至暗色模式';
-    }
-
-    var stored = null;
-    try { stored = localStorage.getItem('snowi-theme'); } catch (e) {}
-    applyTheme(stored === 'dark');
-
-    if (toggle) {
-      toggle.addEventListener('click', function () {
-        var isDark = !root.classList.contains('snowi-dark');
-        applyTheme(isDark);
-        try { localStorage.setItem('snowi-theme', isDark ? 'dark' : 'light'); } catch (e) {}
-      });
-    }
-
-    /* ---------------- 搜索展开 ---------------- */
-    var searchToggle = document.getElementById('snowiSearchToggle');
-    var searchForm = document.getElementById('snowiSearch');
-    if (searchToggle && searchForm) {
-      searchToggle.addEventListener('click', function () {
-        var open = searchForm.classList.toggle('open');
-        searchToggle.classList.toggle('active', open);
-        if (open) {
-          var input = searchForm.querySelector('input');
-          if (input) input.focus();
-        }
-      });
-    }
-
-    /* ---------------- 分享截图 ---------------- */
-    var CAPTURE_PADDING = '16px 12px 20px';
-    var H2C_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-
-    function ensureHtml2Canvas() {
-      if (window.html2canvas) return Promise.resolve(window.html2canvas);
-      if (window.__snowiH2C) return window.__snowiH2C;
-      window.__snowiH2C = new Promise(function (resolve, reject) {
-        var s = document.createElement('script');
-        s.src = H2C_URL;
-        s.onload = function () { resolve(window.html2canvas); };
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-      return window.__snowiH2C;
-    }
-
-    function waitImageReady(img) {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise(function (resolve) {
-        var done = function () { resolve(); };
-        img.addEventListener('load', done, { once: true });
-        img.addEventListener('error', done, { once: true });
-        setTimeout(done, 6000);
-      });
-    }
-
-    function createCoverDataURL(img, targetW, targetH, pixelRatio) {
-      var cw = Math.max(1, Math.round(targetW * pixelRatio));
-      var ch = Math.max(1, Math.round(targetH * pixelRatio));
-      var canvas = document.createElement('canvas');
-      canvas.width = cw;
-      canvas.height = ch;
-      var ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-
-      var iw = img.naturalWidth;
-      var ih = img.naturalHeight;
-      if (!iw || !ih) return null;
-
-      var targetRatio = cw / ch;
-      var srcRatio = iw / ih;
-      var sx = 0, sy = 0, sw = iw, sh = ih;
-      if (srcRatio > targetRatio) {
-        sw = ih * targetRatio;
-        sx = (iw - sw) / 2;
-      } else {
-        sh = iw / targetRatio;
-        sy = (ih - sh) / 2;
-      }
-
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
-
-      try { return canvas.toDataURL('image/png'); }
-      catch (e) { console.warn('图片无法导出', e); return null; }
-    }
-
-    async function snapshotCardImages(wrapper, pixelRatio) {
-      var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
-      if (imgs.length === 0) return [];
-      await Promise.all(imgs.map(waitImageReady));
-
-      var origPadding = wrapper.style.padding;
-      wrapper.style.padding = CAPTURE_PADDING;
-      void wrapper.offsetWidth;
-
-      var snapshots = imgs.map(function (img) {
-        var rect = img.getBoundingClientRect();
-        var w = Math.max(1, Math.round(rect.width));
-        var h = Math.max(1, Math.round(rect.height));
-        return { w: w, h: h, dataURL: createCoverDataURL(img, w, h, pixelRatio) };
-      });
-
-      wrapper.style.padding = origPadding;
-      return snapshots;
-    }
-
-    var loadingIconHTML =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="share-loading-icon">' +
-      '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9">' +
-      '<animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/>' +
-      '</path></svg>';
-
-    var shareBtns = document.querySelectorAll('.share-btn');
-    shareBtns.forEach(function (btn) {
-      btn.addEventListener('click', async function () {
-        if (this.disabled) return;
-
-        var wrapper = this.closest('.card-wrapper');
-        if (!wrapper) return;
-
-        var originalHTML = this.innerHTML;
-        var computedColor = window.getComputedStyle(this).color;
-
-        this.innerHTML = loadingIconHTML;
-        this.disabled = true;
-
-        try {
-          var h2c = await ensureHtml2Canvas();
-          var highResScale = (window.devicePixelRatio || 1) * 1.2;
-          var bgSource = document.querySelector('.snowi-page') || document.body;
-          var currentBg = getComputedStyle(bgSource).getPropertyValue('--bg-color').trim() || '#f2f3f5';
-
-          var snapshots = await snapshotCardImages(wrapper, highResScale);
-
-          var canvas = await h2c(wrapper, {
-            useCORS: true,
-            allowTaint: false,
-            backgroundColor: currentBg,
-            scale: highResScale,
-            dpi: 300,
-            logging: false,
-            onclone: function (clonedDoc, element) {
-              element.style.padding = CAPTURE_PADDING;
-
-              var watermark = clonedDoc.createElement('div');
-              watermark.className = 'snowi-watermark';
-              watermark.textContent = '❄️ ' + siteTitle + '.';
-              element.appendChild(watermark);
-
-              var clonedBtn = element.querySelector('.share-btn');
-              if (clonedBtn) {
-                clonedBtn.innerHTML =
-                  '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:' +
-                  computedColor +
-                  ';stroke-width:2;stroke-linecap:round;stroke-linejoin:round;">' +
-                  '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>' +
-                  '<polyline points="16 6 12 2 8 6"></polyline>' +
-                  '<line x1="12" y1="2" x2="12" y2="15"></line></svg>';
-              }
-
-              var clonedImgs = element.querySelectorAll('img');
-              clonedImgs.forEach(function (img, index) {
-                var snap = snapshots[index];
-                if (!snap) return;
-                if (snap.dataURL) img.setAttribute('src', snap.dataURL);
-                img.style.width = snap.w + 'px';
-                img.style.height = snap.h + 'px';
-                img.style.maxWidth = 'none';
-                img.style.maxHeight = 'none';
-                img.style.objectFit = 'fill';
-              });
-            },
-          });
-
-          var link = document.createElement('a');
-          link.download = 'Snowi-Post-' + Date.now() + '.png';
-          link.href = canvas.toDataURL('image/png');
-          link.click();
-        } catch (err) {
-          console.error('截图失败:', err);
-          alert('截图生成失败，请检查图片跨域问题。');
-        } finally {
-          this.innerHTML = originalHTML;
-          this.disabled = false;
-        }
-      });
-    });
-  })();
-</script>

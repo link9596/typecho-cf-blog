@@ -1,0 +1,393 @@
+---
+/**
+ * Snowi theme — shared client behaviour
+ *
+ * 集中处理主题切换、搜索展开、分享截图与评论回复。
+ * 所有交互都使用 document 级事件委托，因此 Swup 替换
+ * #header / #main / #secondary / #footer 后无需重新绑定。
+ */
+interface Props {
+  siteTitle?: string;
+}
+
+const { siteTitle = '' } = Astro.props;
+---
+
+<script is:inline define:vars={{ siteTitle }}>
+  (function () {
+    'use strict';
+
+    if (window.__snowiThemeInit) return;
+    window.__snowiThemeInit = true;
+
+    var root = document.documentElement;
+    var STORAGE_KEY = 'snowi-theme';
+    var LEGACY_KEY = 'theme';
+
+    /* ================= 主题切换 ================= */
+
+    function getStoredTheme() {
+      try {
+        return localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function setStoredTheme(value) {
+      try {
+        localStorage.setItem(STORAGE_KEY, value);
+        localStorage.removeItem(LEGACY_KEY);
+      } catch (e) {}
+    }
+
+    function isDark() {
+      return root.classList.contains('snowi-dark');
+    }
+
+    function syncThemeUI() {
+      var dark = isDark();
+      var icons = document.querySelectorAll('#snowiThemeIcon, #themeIcon');
+      for (var i = 0; i < icons.length; i++) {
+        icons[i].textContent = dark ? '☀️' : '🌙';
+      }
+      var texts = document.querySelectorAll('#snowiThemeText, #themeText');
+      for (var j = 0; j < texts.length; j++) {
+        texts[j].textContent = dark ? '切换至亮色模式' : '切换至暗色模式';
+      }
+      var buttons = document.querySelectorAll('#snowiThemeToggle, #themeToggle');
+      for (var k = 0; k < buttons.length; k++) {
+        buttons[k].setAttribute('aria-pressed', dark ? 'true' : 'false');
+      }
+    }
+
+    function applyTheme(dark, persist) {
+      if (dark) root.classList.add('snowi-dark');
+      else root.classList.remove('snowi-dark');
+      if (persist) setStoredTheme(dark ? 'dark' : 'light');
+      syncThemeUI();
+    }
+
+    var storedTheme = getStoredTheme();
+    if (storedTheme === 'dark') root.classList.add('snowi-dark');
+    else if (storedTheme === 'light') root.classList.remove('snowi-dark');
+    syncThemeUI();
+
+    /* ================= 评论回复 ================= */
+
+    window.TypechoComment = {
+      dom: function (id) {
+        return document.getElementById(id);
+      },
+      reply: function (commentId, coid) {
+        var comment = this.dom(commentId);
+        var respond = this.dom('respond');
+        var cancelLink = this.dom('cancel-comment-reply-link');
+        var parentInput = this.dom('comment-parent');
+        if (!comment || !respond || !parentInput) return true;
+        parentInput.value = coid;
+        comment.appendChild(respond);
+        if (cancelLink) cancelLink.style.display = '';
+        try {
+          var textarea = this.dom('textarea');
+          if (textarea) textarea.focus();
+        } catch (e) {}
+        return false;
+      },
+      cancelReply: function () {
+        var respond = this.dom('respond');
+        var cancelLink = this.dom('cancel-comment-reply-link');
+        var parentInput = this.dom('comment-parent');
+        var comments = this.dom('comments');
+        if (!respond || !comments || !parentInput) return false;
+        parentInput.value = '0';
+        if (cancelLink) cancelLink.style.display = 'none';
+        comments.appendChild(respond);
+        return false;
+      }
+    };
+
+    /* ================= 播放器脚本（按需加载，兼容 Swup） ================= */
+
+    function ensureMoodPlayer() {
+      try {
+        if (typeof customElements === 'undefined' || customElements.get('mood-player')) return;
+      } catch (e) {
+        return;
+      }
+      if (!document.querySelector('mood-player')) return;
+      if (window.__snowiMoodPlayerLoading) return;
+      window.__snowiMoodPlayerLoading = true;
+      var script = document.createElement('script');
+      script.src = '/js/mood-player.min.js';
+      script.async = true;
+      script.onload = function () {
+        window.__snowiMoodPlayerLoading = false;
+      };
+      script.onerror = function () {
+        window.__snowiMoodPlayerLoading = false;
+      };
+      document.head.appendChild(script);
+    }
+
+    ensureMoodPlayer();
+
+    /* ================= 分享截图 ================= */
+
+    var CAPTURE_PADDING = '16px 12px 20px';
+    var H2C_SRC = '/js/screenshot.js';
+
+    var LOADING_ICON =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="share-loading-icon spin">' +
+      '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3c4.97 0 9 4.03 9 9"></path>' +
+      '</svg>';
+
+    function shareIcon(color) {
+      return (
+        '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:none;stroke:' +
+        color +
+        ';stroke-width:2;stroke-linecap:round;stroke-linejoin:round;">' +
+        '<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>' +
+        '<polyline points="16 6 12 2 8 6"></polyline>' +
+        '<line x1="12" y1="2" x2="12" y2="15"></line></svg>'
+      );
+    }
+
+    function ensureHtml2Canvas() {
+      if (window.html2canvas) return Promise.resolve(window.html2canvas);
+      if (window.__snowiH2C) return window.__snowiH2C;
+      window.__snowiH2C = new Promise(function (resolve, reject) {
+        var script = document.createElement('script');
+        script.src = H2C_SRC;
+        script.async = true;
+        script.onload = function () {
+          if (window.html2canvas) resolve(window.html2canvas);
+          else reject(new Error('html2canvas missing'));
+        };
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      return window.__snowiH2C;
+    }
+
+    function waitImageReady(img) {
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+      return new Promise(function (resolve) {
+        var done = function () {
+          resolve();
+        };
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+        setTimeout(done, 6000);
+      });
+    }
+
+    function createCoverDataURL(img, targetW, targetH, pixelRatio) {
+      var cw = Math.max(1, Math.round(targetW * pixelRatio));
+      var ch = Math.max(1, Math.round(targetH * pixelRatio));
+      var canvas = document.createElement('canvas');
+      canvas.width = cw;
+      canvas.height = ch;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      var iw = img.naturalWidth;
+      var ih = img.naturalHeight;
+      if (!iw || !ih) return null;
+
+      var targetRatio = cw / ch;
+      var srcRatio = iw / ih;
+      var sx = 0;
+      var sy = 0;
+      var sw = iw;
+      var sh = ih;
+      if (srcRatio > targetRatio) {
+        sw = ih * targetRatio;
+        sx = (iw - sw) / 2;
+      } else {
+        sh = iw / targetRatio;
+        sy = (ih - sh) / 2;
+      }
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
+
+      try {
+        return canvas.toDataURL('image/png');
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function snapshotCardImages(wrapper, pixelRatio) {
+      var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
+      if (imgs.length === 0) return Promise.resolve([]);
+      return Promise.all(imgs.map(waitImageReady)).then(function () {
+        var origPadding = wrapper.style.padding;
+        wrapper.style.padding = CAPTURE_PADDING;
+        void wrapper.offsetWidth;
+
+        var snapshots = imgs.map(function (img) {
+          var rect = img.getBoundingClientRect();
+          var w = Math.max(1, Math.round(rect.width));
+          var h = Math.max(1, Math.round(rect.height));
+          return { w: w, h: h, dataURL: createCoverDataURL(img, w, h, pixelRatio) };
+        });
+
+        wrapper.style.padding = origPadding;
+        return snapshots;
+      });
+    }
+
+    function getPageType() {
+      if (document.querySelector('.post-detail-card')) return 'post';
+      if (document.querySelector('.page-detail-card')) return 'page';
+      if (document.querySelector('.archive-header-card')) return 'archive';
+      if (document.querySelector('.notfound-card')) return 'notfound';
+      return 'index';
+    }
+
+    async function handleShare(btn) {
+      if (btn.disabled || btn.dataset.snowiBusy === '1') return;
+
+      var wrapper = btn.closest('.card-wrapper');
+      var pageEl = document.querySelector('.snowi-page');
+      if (!wrapper || !pageEl) return;
+
+      if (typeof window.html2canvas !== 'function') {
+        try {
+          await ensureHtml2Canvas();
+        } catch (e) {
+          alert('截图组件加载失败（/js/screenshot.js）');
+          return;
+        }
+      }
+
+      var originalHTML = btn.innerHTML;
+      var computedColor = window.getComputedStyle(btn).color;
+
+      btn.innerHTML = LOADING_ICON;
+      btn.disabled = true;
+      btn.dataset.snowiBusy = '1';
+
+      try {
+        var highResScale = (window.devicePixelRatio || 1) * 1.2;
+        var pageStyle = window.getComputedStyle(pageEl);
+        var currentBg = pageStyle.getPropertyValue('--bg-color').trim() || '#f2f3f5';
+        var snapshots = await snapshotCardImages(wrapper, highResScale);
+
+        var canvas = await window.html2canvas(wrapper, {
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: currentBg,
+          scale: highResScale,
+          dpi: 300,
+          logging: false,
+          ignoreElements: function (el) {
+            return el.tagName === 'MOOD-PLAYER' || el.tagName === 'VIDEO';
+          },
+          onclone: function (clonedDoc, element) {
+            element.style.padding = CAPTURE_PADDING;
+
+            ['--bg-color', '--card-bg', '--text-main', '--text-sub', '--icon-color', '--btn-hover', '--media-bg', '--footer-bg', '--watermark-color', '--border-color'].forEach(function (name) {
+              element.style.setProperty(name, pageStyle.getPropertyValue(name).trim());
+            });
+
+            var watermark = clonedDoc.createElement('div');
+            watermark.className = 'snowi-watermark';
+            watermark.textContent = '❄️ ' + siteTitle + '.';
+            element.appendChild(watermark);
+
+            var clonedBtn = element.querySelector('.share-btn');
+            if (clonedBtn) {
+              clonedBtn.innerHTML = shareIcon(computedColor);
+              clonedBtn.style.display = 'flex';
+            }
+
+            var clonedImgs = element.querySelectorAll('img');
+            clonedImgs.forEach(function (img, index) {
+              var snap = snapshots[index];
+              if (!snap) return;
+              if (snap.dataURL) img.setAttribute('src', snap.dataURL);
+              img.style.width = snap.w + 'px';
+              img.style.height = snap.h + 'px';
+              img.style.maxWidth = 'none';
+              img.style.maxHeight = 'none';
+              img.style.objectFit = 'fill';
+            });
+          }
+        });
+
+        var type = getPageType();
+        var prefix =
+          type === 'index'
+            ? 'Snowi-'
+            : 'Snowi-' + type.charAt(0).toUpperCase() + type.slice(1) + '-';
+        var link = document.createElement('a');
+        link.download = prefix + Date.now() + '.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      } catch (err) {
+        console.error('截图失败:', err);
+        alert('截图生成失败，请检查图片跨域问题。');
+      } finally {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+        delete btn.dataset.snowiBusy;
+      }
+    }
+
+    /* ================= 事件委托（Swup 切页后依然有效） ================= */
+
+    document.addEventListener('click', function (e) {
+      var target = e.target;
+      if (!target || !target.closest) return;
+
+      var themeBtn = target.closest('#snowiThemeToggle, #themeToggle');
+      if (themeBtn) {
+        e.preventDefault();
+        applyTheme(!isDark(), true);
+        return;
+      }
+
+      var searchBtn = target.closest('#snowiSearchToggle');
+      if (searchBtn) {
+        e.preventDefault();
+        var form = document.getElementById('snowiSearch');
+        if (!form) return;
+        var open = form.classList.toggle('open');
+        searchBtn.classList.toggle('active', open);
+        if (open) {
+          var input = form.querySelector('input');
+          if (input) input.focus();
+        }
+        return;
+      }
+
+      var shareBtn = target.closest('.share-btn');
+      if (shareBtn) {
+        e.preventDefault();
+        handleShare(shareBtn);
+      }
+    });
+
+    /* ================= Swup / Astro 切页 ================= */
+
+    document.addEventListener('astro:page-load', function () {
+      // 换页后同步主题按钮的文字与图标
+      syncThemeUI();
+
+      // 新页面若包含播放器而脚本尚未加载，则补载
+      ensureMoodPlayer();
+
+      // 兼容仍监听 page:view 的插件（LivePhoto、Lightbox、网易云音乐等）
+      try {
+        document.dispatchEvent(new Event('page:view'));
+      } catch (e) {}
+      try {
+        document.dispatchEvent(new Event('swup:page:view'));
+      } catch (e) {}
+    });
+  })();
+</script>
