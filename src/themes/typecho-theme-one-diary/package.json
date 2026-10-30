@@ -12,8 +12,6 @@
   ],
   "files": [
     "theme.json",
-    "normalize.css",
-    "grid.css",
     "style.css",
     "components/"
   ]
