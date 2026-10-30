@@ -177,14 +177,13 @@ const { siteTitle = '' } = Astro.props;
     }
 
     /*
-     * 截图前的预处理：
-     * 1. 移除 loading="lazy" 强制解码。
-     * 2. 强制添加 crossorigin="anonymous" 属性。
-     * 无需手动转换 DataURL，html-to-image 能自动处理跨域。
+     * 截图前的图片预处理：
+     * 使用 Canvas 将图片转为 Base64，彻底杜绝 html-to-image 因 CORS 或缓存导致的空白。
      */
-    function prepareCardImages(wrapper) {
+    async function prepareCardImages(wrapper) {
       var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
       var restores = [];
+      var tasks = [];
 
       imgs.forEach(function (img) {
         var src = img.getAttribute('src') || '';
@@ -192,22 +191,69 @@ const { siteTitle = '' } = Astro.props;
 
         var original = {
           img: img,
+          src: src,
+          srcset: img.getAttribute('srcset'),
+          sizes: img.getAttribute('sizes'),
           crossorigin: img.getAttribute('crossorigin'),
           loading: img.getAttribute('loading'),
         };
-
-        // 移除懒加载，添加跨域属性
-        img.removeAttribute('loading');
-        img.setAttribute('crossorigin', 'anonymous');
-        
         restores.push(original);
+
+        // 移除懒加载，确保图片能立刻解码
+        img.removeAttribute('loading');
+
+        // 创建 Promise 等待图片变成 Base64
+        tasks.push(new Promise(function (resolve) {
+          var image = new Image();
+          image.crossOrigin = 'anonymous'; // 强制走 CORS 请求
+          
+          var timer = setTimeout(function() { 
+            console.warn('[snowi] 图片加载超时:', src);
+            resolve(); 
+          }, 5000);
+          
+          image.onload = function () {
+            clearTimeout(timer);
+            try {
+              var canvas = document.createElement('canvas');
+              canvas.width = image.naturalWidth || image.width || 1;
+              canvas.height = image.naturalHeight || image.height || 1;
+              var ctx = canvas.getContext('2d');
+              ctx.drawImage(image, 0, 0);
+              // 成功转为 Base64，替换原本的 src
+              var dataUrl = canvas.toDataURL('image/png');
+              img.removeAttribute('srcset');
+              img.removeAttribute('sizes');
+              img.setAttribute('src', dataUrl);
+            } catch (e) {
+              console.warn('[snowi] 图片转 Base64 失败(画布污染):', src, e);
+            }
+            resolve();
+          };
+          
+          image.onerror = function () {
+            clearTimeout(timer);
+            console.warn('[snowi] 图片跨域加载失败:', src);
+            resolve(); // 失败也继续，不要卡死整体流程
+          };
+          
+          image.src = src;
+        }));
       });
 
+      // ★ 必须等待所有图片都处理完再继续
+      await Promise.all(tasks);
+
+      // 返回恢复函数
       return function restore() {
         restores.forEach(function (item) {
+          item.img.setAttribute('src', item.src);
+          if (item.srcset) item.img.setAttribute('srcset', item.srcset);
+          else item.img.removeAttribute('srcset');
+          if (item.sizes) item.img.setAttribute('sizes', item.sizes);
+          else item.img.removeAttribute('sizes');
           if (item.crossorigin !== null) item.img.setAttribute('crossorigin', item.crossorigin);
           else item.img.removeAttribute('crossorigin');
-          
           if (item.loading) item.img.setAttribute('loading', item.loading);
           else item.img.removeAttribute('loading');
         });
@@ -258,13 +304,16 @@ const { siteTitle = '' } = Astro.props;
       watermark.textContent = '❄️ ' + siteTitle + '.';
       wrapper.appendChild(watermark);
 
-      var restoreImages = prepareCardImages(wrapper);
+      var restoreImages = function () {};
 
       try {
+        // ★ 关键：用 await 等待所有图片转换完 Base64 再进行截图
+        restoreImages = await prepareCardImages(wrapper);
+
         var captureOptions = {
           backgroundColor: currentBg,
           pixelRatio: highResScale,
-          cacheBust: true, // 关键：强制绕过缓存，避免读取到旧的未带 CORS 头的缓存响应
+          cacheBust: false, // 已经是 Base64 了，不需要强制绕过缓存
           skipFonts: true,
           imagePlaceholder: TRANSPARENT_PIXEL,
           filter: function (node) {
@@ -278,18 +327,19 @@ const { siteTitle = '' } = Astro.props;
         try {
           dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
         } catch (firstErr) {
-          console.warn('截图首次失败，尝试无图片回退:', firstErr);
+          console.warn('截图首次失败，尝试轻量回退:', firstErr);
           dataUrl = await window.htmlToImage.toPng(wrapper, {
             backgroundColor: currentBg,
             pixelRatio: 1,
-            cacheBust: true,
+            cacheBust: false,
             skipFonts: true,
             imagePlaceholder: TRANSPARENT_PIXEL,
             filter: function (node) {
               var tag = node.tagName;
               var isHeavy = node.nodeType === 1 && node.classList &&
                 (node.classList.contains('live-photo-badge') || node.classList.contains('player-placeholder'));
-              return !isHeavy && tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' && tag !== 'IMG' && tag !== 'SVG' &&
+              // ⚠️ 关键修复：去掉了 tag !== 'IMG' 和 tag !== 'SVG'，确保回退时依然保留图片
+              return !isHeavy && tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' &&
                 tag !== 'IFRAME' && tag !== 'OBJECT' && tag !== 'EMBED' && tag !== 'CANVAS' && tag !== 'AUDIO';
             },
           });
