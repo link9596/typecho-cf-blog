@@ -24,6 +24,7 @@ import 'virtual:typecho-plugin-registry';
 
 const BUILT_IN_ROUTES = [
   /^\/archives\/\d+\/?$/,       // post: /archives/{cid}/
+  /^\/archive-date\//,          // internal date archive route
   /^\/[^/]+\.html$/,            // page: /{slug}.html
   /^\/category\/[^/]+\/?$/,     // category: /category/{slug}/
   /^\/tag\//,
@@ -158,8 +159,24 @@ export const onRequest = defineMiddleware(async (context, next) => {
     !path.startsWith('/feed') &&
     !path.startsWith('/usr/')
   ) {
+    // ── Date archive rewriting ──
+    // Public Typecho date URLs: /2026/, /2026/10/, /2026/10/01/
+    const dateMatch = path.match(/^\/(\d{4})(?:\/(\d{2}))?(?:\/(\d{2}))?\/?$/);
+    if (dateMatch) {
+      const [, year, monthPart, dayPart] = dateMatch;
+      const month = monthPart ? parseInt(monthPart, 10) : undefined;
+      const day = dayPart ? parseInt(dayPart, 10) : undefined;
+      const validMonth = month === undefined || (month >= 1 && month <= 12);
+      const validDay = day === undefined || (month !== undefined && day >= 1 && day <= 31);
+      if (validMonth && validDay) {
+        const suffix = dayPart ? `/${dayPart}` : monthPart ? `/${monthPart}` : '';
+        permalinkTarget = `/archive-date/${year}${suffix}/${url.search}`;
+      }
+    }
+
     // ── Post permalink rewriting ──
     if (
+      !permalinkTarget &&
       postPattern &&
       postPattern !== '/archives/{cid}/'
     ) {
@@ -190,6 +207,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
     // ── Page permalink rewriting ──
     if (
+      !permalinkTarget &&
       pagePattern &&
       pagePattern !== '/{slug}.html'
     ) {
@@ -223,6 +241,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
     // ── Category permalink rewriting ──
     if (
+      !permalinkTarget &&
       categoryPattern &&
       categoryPattern !== '/category/{slug}/'
     ) {
