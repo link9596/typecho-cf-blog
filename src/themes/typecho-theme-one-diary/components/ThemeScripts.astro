@@ -290,7 +290,7 @@ const { siteTitle = '' } = Astro.props;
           onclone: function (clonedDoc, element) {
             element.style.padding = CAPTURE_PADDING;
 
-            ['--bg-color', '--card-bg', '--text-main', '--text-sub', '--icon-color', '--btn-hover', '--media-bg', '--footer-bg', '--watermark-color', '--border-color'].forEach(function (name) {
+            ['--bg-color', '--card-bg', '--text-main', '--text-sub', '--icon-color', '--btn-hover', '--media-bg', '--footer-bg', '--watermark-color'].forEach(function (name) {
               element.style.setProperty(name, pageStyle.getPropertyValue(name).trim());
             });
 

@@ -190,11 +190,6 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
               </div>
             </header>
 
-            <!-- 标题 -->
-            <h1 class="post-title" itemprop="name headline">
-              <a itemprop="url" href={post.permalink}>{post.title}</a>
-            </h1>
-
             <!-- 正文 / 密码 -->
             {!canSeeContent ? (
               <div class="post-password">
@@ -237,6 +232,9 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
                 )}
               </div>
             )}
+
+            <!-- 标题放在文章末尾，靠右下角 -->
+            <h1 class="post-title-end" itemprop="name headline">《{post.title}》</h1>
 
             <!-- 底部操作 -->
             <footer class="post-actions">
