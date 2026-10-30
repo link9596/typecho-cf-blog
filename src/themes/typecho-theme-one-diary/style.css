@@ -1099,17 +1099,6 @@ html.snowi-dark .snowi-page .author-name {
   word-break: break-word;
 }
 
-.snowi-page .comment-list ol,
-.snowi-page .comment-list ul {
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0 0 0 14px;
-  border-left: 2px solid var(--btn-hover);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .snowi-page .comment-list img {
   border-radius: 10px;
   background-color: var(--media-bg);
@@ -1854,9 +1843,12 @@ html.snowi-dark .snowi-page .code-digit {
    ========================================================================== */
 
 .snowi-page .comment-body {
+  background-color: var(--footer-bg);
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
   font-size: 14px;
   line-height: 1.7;
   color: var(--text-main);
@@ -1864,8 +1856,8 @@ html.snowi-dark .snowi-page .code-digit {
 }
 
 .snowi-page .comment-main {
-  background-color: var(--footer-bg);
-  border-radius: 12px;
+  background-color: transparent;
+  border-radius: 0;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -1924,6 +1916,45 @@ html.snowi-dark .snowi-page .code-digit {
   font-weight: 500;
   letter-spacing: 0.3px;
   color: var(--text-sub);
+}
+
+/* 回复引用：显示被回复用户和父评论摘要 */
+.snowi-page .comment-reply-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border-left: 2px solid var(--text-sub);
+  border-radius: 0 6px 6px 0;
+  background-color: var(--btn-hover);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-sub);
+}
+
+.snowi-page .comment-reply-context .reply-label {
+  flex-shrink: 0;
+}
+
+.snowi-page .comment-reply-context .reply-author {
+  color: var(--text-main);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.snowi-page .comment-reply-context .reply-author:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.snowi-page .comment-reply-context .reply-excerpt {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .snowi-page .comment-content {
@@ -2017,21 +2048,20 @@ html.snowi-dark .snowi-page .code-digit {
 }
 
 .snowi-page .comment-children {
-  margin-top: 8px;
+  margin-top: 0;
   padding-left: 12px;
   border-left: 2px solid var(--btn-hover);
 }
 
-/* 抵消 Post / Page 对嵌套 .comment-list 的通用缩进，避免双重边框 */
-.snowi-page .comment-children > .comment-list {
-  margin: 0;
+/* 最多只保留一层缩进：更深层的回复不再继续缩进/加边框 */
+.snowi-page .comment-children .comment-children {
   padding-left: 0;
-  border-left: none;
+  border-left: 0;
 }
 
 .snowi-page .comment-body > .respond {
   margin-top: 4px;
-  background-color: var(--footer-bg);
+  background-color: var(--card-bg);
   border-radius: 12px;
   padding: 14px;
 }
