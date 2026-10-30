@@ -678,6 +678,7 @@ export async function preparePostData(
       allowComment,
       hasPassword,
       passwordVerified,
+      status: contentRow.status || '',
     },
     // author 带上 avatarUrl
     author: author ? { uid: author.uid, name: author.name || '', screenName: author.screenName || author.name || '', avatarUrl: authorAvatar } : null,

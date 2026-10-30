@@ -43,6 +43,8 @@ export interface PostListItem {
   excerpt: string;
   created: number;
   commentsNum: number;
+  /** publish / logged / private … */
+  status: string;
   author: { uid: number; name: string; screenName: string; avatarUrl: string } | null;
   categories: Array<{ name: string; slug: string; permalink: string }>;
 }
@@ -73,6 +75,8 @@ export interface ThemePostProps extends ThemeBaseProps {
     hasPassword: boolean;
     /** Whether the user has supplied the correct password */
     passwordVerified: boolean;
+    /** publish / logged / private … */
+    status: string;
   };
   author: { uid: number; name: string; screenName: string; avatarUrl: string } | null;
   categories: Array<{ name: string; slug: string; permalink: string }>;
