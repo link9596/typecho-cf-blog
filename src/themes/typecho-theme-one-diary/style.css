@@ -37,7 +37,6 @@ body {
   --media-bg: #eeeeee;
   --footer-bg: #fafafa;
   --watermark-color: #999999;
-  --border-color: #eaeaea;
 
   background-color: var(--bg-color);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -50,7 +49,6 @@ body {
   box-sizing: border-box;
 }
 
-body.dark-mode .snowi-page,
 html.snowi-dark .snowi-page {
   --bg-color: #121212;
   --card-bg: #242426;
@@ -61,7 +59,6 @@ html.snowi-dark .snowi-page {
   --media-bg: #333333;
   --footer-bg: #1e1e20;
   --watermark-color: #666666;
-  --border-color: #333333;
 }
 
 html.snowi-dark body {
@@ -159,7 +156,6 @@ html.snowi-dark body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
-body.dark-mode .snowi-page .nav-item.active,
 html.snowi-dark .snowi-page .nav-item.active {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
@@ -220,8 +216,7 @@ html.snowi-dark .snowi-page .nav-item.active {
   gap: 8px;
 }
 
-.snowi-page .post-container,
-.snowi-page .page-container {
+.snowi-page .post-container {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -320,7 +315,6 @@ html.snowi-dark .snowi-page .nav-item.active {
   white-space: nowrap;
 }
 
-body.dark-mode .snowi-page .author-name,
 html.snowi-dark .snowi-page .author-name {
   color: #888888;
 }
@@ -351,9 +345,9 @@ html.snowi-dark .snowi-page .author-name {
 .snowi-page .post-title {
   position: relative;
   z-index: 2;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--text-main);
   letter-spacing: 0.3px;
   margin: 0;
@@ -367,6 +361,20 @@ html.snowi-dark .snowi-page .author-name {
 
 .snowi-page .cards-container .post-title a:hover {
   color: var(--text-sub);
+}
+
+/* 文章页标题：放在正文末尾，右对齐的浅色书名号标题 */
+.snowi-page .post-title-end {
+  align-self: flex-end;
+  max-width: 100%;
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.3px;
+  color: var(--text-sub);
+  text-align: right;
+  word-break: break-word;
 }
 
 /* 底部操作栏（Index 的压缩高度方案） */
@@ -486,6 +494,19 @@ html.snowi-dark .snowi-page .author-name {
   margin-bottom: 0;
 }
 
+.snowi-page .post-text a {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--text-sub);
+}
+
+.snowi-page .post-text ul,
+.snowi-page .post-text ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
 .snowi-page .post-media {
   position: relative;
   z-index: 2;
@@ -501,11 +522,6 @@ html.snowi-dark .snowi-page .author-name {
   display: block;
   object-fit: cover;
   max-height: 400px;
-}
-
-.snowi-page .post-media .live-photo {
-  width: 100%;
-  background-color: var(--media-bg);
 }
 
 .snowi-page .post-media-grid {
@@ -572,34 +588,133 @@ html.snowi-dark .snowi-page .author-name {
   background-color: var(--media-bg);
 }
 
-.snowi-page .media-cell .live-photo {
-  width: 100%;
-  height: 100%;
-}
-
-/* Live Photo（网格内由 buildGridLivePhoto 生成，样式统一放在这里） */
-.snowi-page .post-media .live-photo,
-.snowi-page .media-cell .live-photo {
+/* ---------- Live Photo（兼容组件生成的 padding-top 容器与手动 HTML） ---------- */
+.snowi-page .live-photo {
   position: relative;
+  display: block;
+  width: 100%;
   overflow: hidden;
+  background-color: var(--media-bg);
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-y pinch-zoom;
 }
 
-.snowi-page .media-cell .live-photo {
-  height: 100%;
+/* 没有内联比例时给默认 3:4，避免容器高度为 0 */
+.snowi-page .live-photo:where(:not([style*="padding-top"]):not([style*="aspect-ratio"])) {
+  aspect-ratio: 3 / 4;
 }
 
-.snowi-page .post-media .live-photo-img,
-.snowi-page .post-media .live-photo-video,
-.snowi-page .media-cell .live-photo-img,
-.snowi-page .media-cell .live-photo-video {
+.snowi-page .live-photo .live-photo-img,
+.snowi-page .live-photo .live-photo-video {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  display: block;
+  margin: 0;
+  max-width: none;
   max-height: none;
+  border-radius: inherit;
+  object-fit: cover;
+  pointer-events: none;
+  transform-origin: center center;
+  user-select: none;
+}
+
+.snowi-page .live-photo .live-photo-img {
+  z-index: 2;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.3s linear, transform 0.3s linear;
+}
+
+.snowi-page .live-photo .live-photo-video {
+  z-index: 1;
+  transform: scale(1);
+  background-color: #000;
+  transition: transform 0.3s linear;
+}
+
+/* 网格里的 live photo 高度由单元格决定 */
+.snowi-page .media-cell .live-photo {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.snowi-page .live-photo.is-playing .live-photo-img {
+  opacity: 0;
+  transform: scale(1.08);
+}
+
+.snowi-page .live-photo.is-playing .live-photo-video {
+  transform: scale(1.08);
+}
+
+/* 实况角标（由 /js/live.js 注入） */
+.snowi-page .live-photo-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 2px 8px 2px 2px;
+  border-radius: 5px;
+  pointer-events: none;
+}
+
+.snowi-page .live-photo-icon {
+  position: relative;
+  width: 20px;
+  height: 20px;
+}
+
+.snowi-page .live-photo-icon-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.snowi-page .live-photo-disabled-icon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.snowi-page .live-photo-text {
+  margin-top: 1px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: #000;
+}
+
+.snowi-page .live-photo-progress-ring {
+  transition: stroke-dashoffset 0.2s linear;
+}
+
+/* 正文 / 摘要中的 Live Photo 间距 */
+.snowi-page .post-content .live-photo {
+  margin: 12px 0;
+}
+
+.snowi-page .post-excerpt .live-photo {
+  margin: 8px 0;
 }
 
 /* ==========================================================================
@@ -607,15 +722,15 @@ html.snowi-dark .snowi-page .author-name {
    ========================================================================== */
 
 .snowi-page .post-content {
-  font-size: 15px;
-  line-height: 1.8;
+  font-size: 14px;
+  line-height: 1.75;
   color: var(--text-main);
   word-wrap: break-word;
   word-break: break-word;
 }
 
 .snowi-page .post-content p {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
 }
 
 .snowi-page .post-content p:last-child {
@@ -693,16 +808,20 @@ html.snowi-dark .snowi-page .author-name {
   color: var(--text-main);
 }
 
-.snowi-page .post-content h2 {
-  font-size: 18px;
+.snowi-page .post-content h1 {
+  font-size: 17px;
 }
 
-.snowi-page .post-content h3 {
+.snowi-page .post-content h2 {
   font-size: 16px;
 }
 
-.snowi-page .post-content h4 {
+.snowi-page .post-content h3 {
   font-size: 15px;
+}
+
+.snowi-page .post-content h4 {
+  font-size: 14px;
 }
 
 .snowi-page .post-content mood-player {
@@ -916,7 +1035,7 @@ html.snowi-dark .snowi-page .author-name {
 
 .snowi-page .comments-title,
 .snowi-page .respond-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   color: var(--text-main);
   margin: 0;
@@ -1240,24 +1359,19 @@ html.snowi-dark .snowi-page .author-name {
   line-height: 1.7;
 }
 
-/* 归档列表卡片标题比详情页略小 */
-.snowi-page .cards-container .post-title {
-  font-size: 17px;
-}
-
 /* 摘要 */
 .snowi-page .post-excerpt {
   position: relative;
   z-index: 2;
   font-size: 14px;
   line-height: 1.75;
-  color: var(--text-sub);
+  color: var(--text-main);
   word-wrap: break-word;
   word-break: break-word;
 }
 
 .snowi-page .post-excerpt p {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 
 .snowi-page .post-excerpt p:last-child {
@@ -1378,8 +1492,7 @@ html.snowi-dark .snowi-page .author-name {
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
-html.snowi-dark .snowi-page .code-digit,
-body.dark-mode .snowi-page .code-digit {
+html.snowi-dark .snowi-page .code-digit {
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
@@ -1527,26 +1640,22 @@ body.dark-mode .snowi-page .code-digit {
   gap: 16px;
 }
 
-@media (min-width: 860px) {
-  .snowi-page .sidebar-section {
-    display: flex;
-  }
-}
-
 .snowi-page .widget {
   background-color: var(--card-bg);
   border-radius: 16px;
-  padding: 16px;
+  padding: 0 16px 16px;
+  overflow: hidden;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
 }
 
+/* 用与卡片底部操作栏同色的顶部色带代替分割线 */
 .snowi-page .widget-title {
   font-size: 14px;
   font-weight: 800;
   color: var(--text-main);
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-color);
+  margin: 0 -16px 12px;
+  padding: 10px 16px;
+  background-color: var(--footer-bg);
 }
 
 .snowi-page .widget-list {
@@ -2014,15 +2123,16 @@ body.dark-mode .snowi-page .code-digit {
    16. 响应式
    ========================================================================== */
 
-@media (min-width: 1024px) {
-  .snowi-page {
-    padding: 40px 24px 48px;
-  }
-
-  /* 只有带 .page-layout 的页面（文章 / 页面 / 归档）使用宽版头尾与双栏布局 */
+@media (min-width: 860px) {
+  /* 宽屏：内容与侧边栏并排，侧边栏固定在右侧 */
   .snowi-page:has(> .page-layout) > .site-header,
   .snowi-page:has(> .page-layout) > .page-footer {
     max-width: 752px;
+  }
+
+  .snowi-page:has(> .page-layout > .sidebar-section.sidebar-empty) > .site-header,
+  .snowi-page:has(> .page-layout > .sidebar-section.sidebar-empty) > .page-footer {
+    max-width: 440px;
   }
 
   .snowi-page .page-layout {
@@ -2035,26 +2145,53 @@ body.dark-mode .snowi-page .code-digit {
     align-items: start;
   }
 
+  .snowi-page .page-layout:has(> .sidebar-section.sidebar-empty) {
+    grid-template-columns: minmax(0, 440px);
+  }
+
   .snowi-page .page-layout > .post-container,
-  .snowi-page .page-layout > .page-container,
   .snowi-page .page-layout > .cards-container {
     grid-column: 1;
     grid-row: 1;
   }
 
   .snowi-page .page-layout > .sidebar-section {
+    display: flex;
     grid-column: 2;
     grid-row: 1 / span 2;
-    margin-top: 0;
+    margin-top: 12px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
     position: sticky;
     top: 24px;
     align-self: start;
   }
 
+  .snowi-page .sidebar-section.sidebar-empty {
+    display: none;
+  }
+}
+
+@media (max-width: 859px) {
+  .snowi-page .sidebar-section {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .snowi-page {
+    padding: 40px 24px 48px;
+  }
+
   .snowi-page .notfound-container,
-  .snowi-page:has(> .notfound-container) > .site-header,
-  .snowi-page:has(> .notfound-container) > .page-footer {
+  .snowi-page:has(> .page-layout > .notfound-container) > .site-header,
+  .snowi-page:has(> .page-layout > .notfound-container) > .page-footer {
     max-width: 520px;
+  }
+
+  .snowi-page:has(> .page-layout > .notfound-container) > .page-layout {
+    max-width: 520px;
+    grid-template-columns: minmax(0, 520px);
   }
 
   .snowi-page .code-digit {
@@ -2076,14 +2213,6 @@ body.dark-mode .snowi-page .code-digit {
     font-size: 28px;
   }
 
-  .snowi-page .post-title {
-    font-size: 18px;
-  }
-
-  .snowi-page .cards-container .post-title {
-    font-size: 16px;
-  }
-
   .snowi-page .archive-title {
     font-size: 18px;
   }
@@ -2092,13 +2221,10 @@ body.dark-mode .snowi-page .code-digit {
     max-width: 80px;
   }
 
+  /* 窄屏也保持上下篇并排，不换行 */
   .snowi-page .post-near-card {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-
-  .snowi-page .near-next {
-    text-align: left;
+    padding: 12px;
+    gap: 8px;
   }
 
   .snowi-page .notfound-card {
