@@ -455,20 +455,60 @@ html.snowi-dark .snowi-page .author-name {
   stroke-linejoin: round;
 }
 
-/* 分享按钮的加载图标（由 JS 动态注入） */
-.snowi-page .action-btn .share-loading-icon {
-  width: 16px;
-  height: 16px;
-  transform-origin: center;
-}
-
-.snowi-page .action-btn .share-loading-icon.spin {
-  animation: snowi-spin 1s linear infinite;
-}
-
 @keyframes snowi-spin {
   100% {
     transform: rotate(360deg);
+  }
+}
+
+/* 分享截图时的页面级提示；位于被截图节点之外，不会进入图片 */
+.snowi-capture-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: rgba(0, 0, 0, 0.35);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.snowi-capture-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: snowi-spin 0.8s linear infinite;
+}
+
+/* Swup 换页后的淡入（兜底缓存页面上缺失的 in 动画） */
+@keyframes snowi-page-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.snowi-page-in {
+  animation: snowi-page-in 0.4s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .snowi-capture-spinner {
+    animation: none;
+  }
+
+  .snowi-page-in {
+    animation: none !important;
   }
 }
 
@@ -558,7 +598,8 @@ html.snowi-dark .snowi-page .author-name {
 .snowi-page .post-media-grid > * {
   display: block;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 1;
+  height: auto;
   object-fit: cover;
   background-color: var(--media-bg);
 }
@@ -567,24 +608,12 @@ html.snowi-dark .snowi-page .author-name {
   grid-template-columns: 1fr 1fr;
 }
 
-.snowi-page .post-media-grid[data-count="2"] > * {
-  height: 160px;
-}
-
 .snowi-page .post-media-grid[data-count="3"] {
   grid-template-columns: repeat(3, 1fr);
 }
 
-.snowi-page .post-media-grid[data-count="3"] > * {
-  height: 120px;
-}
-
 .snowi-page .post-media-grid[data-count="4"] {
   grid-template-columns: 1fr 1fr;
-}
-
-.snowi-page .post-media-grid[data-count="4"] > * {
-  height: 150px;
 }
 
 .snowi-page .post-media-grid[data-count="5"],
@@ -593,14 +622,6 @@ html.snowi-dark .snowi-page .author-name {
 .snowi-page .post-media-grid[data-count="8"],
 .snowi-page .post-media-grid[data-count="9"] {
   grid-template-columns: repeat(3, 1fr);
-}
-
-.snowi-page .post-media-grid[data-count="5"] > *,
-.snowi-page .post-media-grid[data-count="6"] > *,
-.snowi-page .post-media-grid[data-count="7"] > *,
-.snowi-page .post-media-grid[data-count="8"] > *,
-.snowi-page .post-media-grid[data-count="9"] > * {
-  height: 105px;
 }
 
 .snowi-page .media-cell {
@@ -1689,22 +1710,6 @@ html.snowi-dark .snowi-page .code-digit {
   color: var(--text-main);
 }
 
-.snowi-page .comment-user {
-  font-weight: 600;
-  color: var(--text-main);
-}
-
-.snowi-page .comment-excerpt {
-  font-size: 12px;
-  color: var(--text-sub);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
-  display: block;
-  margin-top: 4px;
-}
-
 .snowi-page .widget-count {
   font-size: 11px;
   color: var(--text-sub);
@@ -1749,39 +1754,6 @@ html.snowi-dark .snowi-page .code-digit {
   -webkit-box-orient: vertical;
   overflow: hidden;
   color: var(--text-sub);
-}
-
-.snowi-page .widget-tags {
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.snowi-page .widget-tags li {
-  margin: 0;
-}
-
-.snowi-page .widget-list li a.widget-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
-  border-radius: 14px;
-  background-color: var(--btn-hover);
-  color: var(--text-sub);
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.snowi-page .widget-list li a.widget-tag:hover {
-  color: var(--text-main);
-  background-color: var(--media-bg);
-}
-
-.snowi-page .widget-tag-count {
-  font-size: 11px;
-  opacity: 0.7;
 }
 
 /* ==========================================================================
