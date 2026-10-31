@@ -135,6 +135,8 @@ const { siteTitle = '' } = Astro.props;
     /* ================= 分享截图（html-to-image） ================= */
 
     var SNAPSHOT_SRC = '/js/screenshot.js';
+    var TRANSPARENT_PIXEL =
+      'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
     function ensureHtmlToImage() {
       if (window.htmlToImage && typeof window.htmlToImage.toPng === 'function') {
@@ -175,10 +177,9 @@ const { siteTitle = '' } = Astro.props;
     }
 
     /*
-     * Safari 专用修复：
-     * 放弃 new Image() + crossOrigin 这种不稳定的做法，
-     * 改用 fetch 直接拉取二进制流并转为 Base64。
-     * 这能 100% 绕开 Safari 的跨域缓存冲突和画布污染。
+     * 终极稳定方案：
+     * 不使用 fetch 也不使用 canvas 转换，直接利用 DOM 自身的加载机制。
+     * 强制给图片加时间戳和 crossOrigin，等待其真正 onload 后交给插件。
      */
     async function prepareCardImages(wrapper) {
       var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
@@ -200,48 +201,40 @@ const { siteTitle = '' } = Astro.props;
         restores.push(original);
 
         img.removeAttribute('loading');
-
-        tasks.push(new Promise(function (resolve) {
-          // 加时间戳，避免 Safari 头铁直接读旧缓存
-          var cacheBustUrl = src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_t=' + Date.now();
-          
-          var timer = setTimeout(function() { 
+        img.removeAttribute('srcset');
+        img.removeAttribute('sizes');
+        
+        // 强制设置 crossOrigin，并加时间戳绕过缓存
+        img.setAttribute('crossorigin', 'anonymous');
+        var cacheBustUrl = src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_t=' + Date.now();
+        
+        tasks.push(new Promise(function(resolve) {
+          var timer = setTimeout(function() {
             console.warn('[snowi] 图片加载超时:', src);
-            resolve(); 
+            resolve();
           }, 5000);
+
+          img.onload = function () {
+            clearTimeout(timer);
+            img.onload = null;
+            img.onerror = null;
+            resolve();
+          };
           
-          fetch(cacheBustUrl, {
-            mode: 'cors',
-            credentials: 'same-origin',
-            cache: 'reload'
-          })
-          .then(function (res) {
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            return res.blob();
-          })
-          .then(function (blob) {
-            return new Promise(function (resolveRead, rejectRead) {
-              var reader = new FileReader();
-              reader.onload = function () { resolveRead(reader.result); };
-              reader.onerror = rejectRead;
-              reader.readAsDataURL(blob);
-            });
-          })
-          .then(function (dataUrl) {
+          img.onerror = function () {
             clearTimeout(timer);
-            img.removeAttribute('srcset');
-            img.removeAttribute('sizes');
-            img.setAttribute('src', dataUrl);
+            img.onload = null;
+            img.onerror = null;
+            console.warn('[snowi] 图片重新加载失败:', cacheBustUrl);
             resolve();
-          })
-          .catch(function (err) {
-            clearTimeout(timer);
-            console.warn('[snowi] 图片转换失败，保持原样:', src, err);
-            resolve();
-          });
+          };
+          
+          // 触发真正的重新加载
+          img.setAttribute('src', cacheBustUrl);
         }));
       });
 
+      // 必须等所有图片的 onload 完成
       await Promise.all(tasks);
 
       return function restore() {
@@ -308,12 +301,13 @@ const { siteTitle = '' } = Astro.props;
       try {
         restoreImages = await prepareCardImages(wrapper);
 
-        // ⚠️ 移除了 imagePlaceholder，绝不允许出现灰白块
+        // 恢复 imagePlaceholder，保证 html-to-image 内部在极端情况下不崩
         var captureOptions = {
           backgroundColor: currentBg,
           pixelRatio: highResScale,
           cacheBust: false, 
           skipFonts: true,
+          imagePlaceholder: TRANSPARENT_PIXEL,
           filter: function (node) {
             var tag = node.tagName;
             return tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' && tag !== 'IFRAME' &&
@@ -323,18 +317,15 @@ const { siteTitle = '' } = Astro.props;
 
         var dataUrl;
         try {
-          // ⚠️ Safari 预热引擎：先极低分辨率空跑一次，骗过 Safari 的首次渲染假死
+          // Safari 预热：防止首次渲染假死或图片变灰
           try {
             await window.htmlToImage.toPng(wrapper, {
               pixelRatio: 0.1,
               skipFonts: true,
               cacheBust: false
             });
-          } catch (warmUpErr) {
-            // 忽略预热报错
-          }
+          } catch (warmUpErr) {}
 
-          // 正式截图
           dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
         } catch (firstErr) {
           console.warn('截图首次失败，尝试轻量回退:', firstErr);
@@ -343,6 +334,7 @@ const { siteTitle = '' } = Astro.props;
             pixelRatio: 1,
             cacheBust: false,
             skipFonts: true,
+            imagePlaceholder: TRANSPARENT_PIXEL,
             filter: function (node) {
               var tag = node.tagName;
               var isHeavy = node.nodeType === 1 && node.classList &&
