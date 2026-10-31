@@ -137,6 +137,10 @@ const { siteTitle = '' } = Astro.props;
     var SNAPSHOT_SRC = '/js/screenshot.js';
     var TRANSPARENT_PIXEL =
       'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    var IS_SAFARI =
+      /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     function ensureHtmlToImage() {
       if (window.htmlToImage && typeof window.htmlToImage.toPng === 'function') {
@@ -176,10 +180,18 @@ const { siteTitle = '' } = Astro.props;
       return overlay;
     }
 
-    /*
-     * 截图前的图片预处理：
-     * 关键修复：给图片 URL 加上时间戳，强制绕过浏览器的“无 CORS 头”脏缓存！
-     */
+    /* ---------- 等待字体就绪 ---------- */
+    function waitFonts(timeout) {
+      if (!document.fonts || !document.fonts.ready) return Promise.resolve();
+      return Promise.race([
+        document.fonts.ready,
+        new Promise(function (resolve) {
+          setTimeout(resolve, timeout || 2500);
+        }),
+      ]);
+    }
+
+    /* ---------- 图片预处理：转 Base64 + 时间戳破缓存（保持上一版逻辑） ---------- */
     async function prepareCardImages(wrapper) {
       var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
       var restores = [];
@@ -199,55 +211,48 @@ const { siteTitle = '' } = Astro.props;
         };
         restores.push(original);
 
-        // 移除懒加载，确保图片能立刻解码
         img.removeAttribute('loading');
+        img.removeAttribute('srcset');
+        img.removeAttribute('sizes');
 
-        // 创建 Promise 等待图片变成 Base64
         tasks.push(new Promise(function (resolve) {
           var image = new Image();
-          image.crossOrigin = 'anonymous'; // 强制走 CORS 请求
-          
-          // ⚠️ 核心修复点：加入时间戳，强制浏览器重新向 R2 服务器请求，不带这个时间戳就会命中脏缓存导致画布污染
+          image.crossOrigin = 'anonymous';
+
           var cacheBustUrl = src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_t=' + Date.now();
-          
-          var timer = setTimeout(function() { 
+
+          var timer = setTimeout(function () {
             console.warn('[snowi] 图片加载超时:', src);
-            resolve(); 
+            resolve();
           }, 5000);
-          
+
           image.onload = function () {
             clearTimeout(timer);
             try {
               var canvas = document.createElement('canvas');
               canvas.width = image.naturalWidth || image.width || 1;
               canvas.height = image.naturalHeight || image.height || 1;
-              var ctx = canvas.getContext('2d');
-              ctx.drawImage(image, 0, 0);
-              // 成功转为 Base64，替换原本的 src
+              canvas.getContext('2d').drawImage(image, 0, 0);
               var dataUrl = canvas.toDataURL('image/png');
-              img.removeAttribute('srcset');
-              img.removeAttribute('sizes');
               img.setAttribute('src', dataUrl);
             } catch (e) {
-              console.warn('[snowi] 图片转 Base64 失败(画布污染):', src, e);
+              console.warn('[snowi] 图片转 Base64 失败:', src, e);
             }
             resolve();
           };
-          
+
           image.onerror = function () {
             clearTimeout(timer);
             console.warn('[snowi] 图片跨域加载失败:', cacheBustUrl);
-            resolve(); // 失败也继续，不要卡死整体流程
+            resolve();
           };
-          
+
           image.src = cacheBustUrl;
         }));
       });
 
-      // ★ 必须等待所有图片都处理完再继续
       await Promise.all(tasks);
 
-      // 返回恢复函数
       return function restore() {
         restores.forEach(function (item) {
           item.img.setAttribute('src', item.src);
@@ -263,6 +268,69 @@ const { siteTitle = '' } = Astro.props;
       };
     }
 
+    /* ---------- Safari 专用的 toCanvas + 手动覆绘图片兜底 ---------- */
+    async function captureWithOverdraw(wrapper, options) {
+      var canvas = await window.htmlToImage.toCanvas(wrapper, options);
+      var ctx = canvas.getContext('2d');
+      var wrapperRect = wrapper.getBoundingClientRect();
+      var scale = options.pixelRatio || 1;
+
+      // 把已解码的 img 直接画到 canvas 上，彻底绕开 foreignObject 的图片渲染
+      var imgs = wrapper.querySelectorAll('img');
+      for (var i = 0; i < imgs.length; i++) {
+        var img = imgs[i];
+        if (!img.complete || !img.naturalWidth) continue;
+        var rect = img.getBoundingClientRect();
+        var x = (rect.left - wrapperRect.left) * scale;
+        var y = (rect.top - wrapperRect.top) * scale;
+        var w = rect.width * scale;
+        var h = rect.height * scale;
+        try {
+          ctx.drawImage(img, x, y, w, h);
+        } catch (e) {
+          console.warn('[snowi] 覆绘图片失败:', e);
+        }
+      }
+      return canvas.toDataURL('image/png');
+    }
+
+    /* ---------- 统一下载（Safari 优先 Blob） ---------- */
+    async function triggerDownload(dataUrlOrBlob, filename) {
+      var blob;
+      if (dataUrlOrBlob instanceof Blob) {
+        blob = dataUrlOrBlob;
+      } else if (typeof dataUrlOrBlob === 'string' && dataUrlOrBlob.indexOf('data:') === 0) {
+        var parts = dataUrlOrBlob.split(',');
+        var mime = parts[0].match(/:(.*?);/)[1];
+        var binary = atob(parts[1]);
+        var array = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
+        blob = new Blob([array], { type: mime });
+      } else {
+        blob = dataUrlOrBlob;
+      }
+
+      if (IS_SAFARI && window.URL && URL.createObjectURL) {
+        var blobUrl = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.download = filename;
+        link.href = blobUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(function () { URL.revokeObjectURL(blobUrl); }, 1000);
+      } else {
+        var link2 = document.createElement('a');
+        link2.download = filename;
+        link2.href = URL.createObjectURL(blob);
+        document.body.appendChild(link2);
+        link2.click();
+        document.body.removeChild(link2);
+        setTimeout(function () { URL.revokeObjectURL(link2.href); }, 1000);
+      }
+    }
+
+    /* ---------- 改写 handleShare ---------- */
     async function handleShare(btn) {
       if (btn.disabled || btn.dataset.snowiBusy === '1') return;
 
@@ -280,7 +348,11 @@ const { siteTitle = '' } = Astro.props;
       }
 
       var type = getPageType();
-      var highResScale = (window.devicePixelRatio || 1) * 1.2;
+      // Safari 像素比压到 1.5 以内，避免 Canvas 超出尺寸上限后空白
+      var highResScale = IS_SAFARI
+        ? Math.min(window.devicePixelRatio || 1, 1.5)
+        : (window.devicePixelRatio || 1) * 1.2;
+
       var pageStyle = window.getComputedStyle(pageEl);
       var currentBg = pageStyle.getPropertyValue('--bg-color').trim() || '#f2f3f5';
       var cssVars = [
@@ -310,13 +382,13 @@ const { siteTitle = '' } = Astro.props;
       var restoreImages = function () {};
 
       try {
-        // 等待所有图片转换完毕
+        await waitFonts(2500);
         restoreImages = await prepareCardImages(wrapper);
 
         var captureOptions = {
           backgroundColor: currentBg,
           pixelRatio: highResScale,
-          cacheBust: false, // 图片已经被替换为 Base64，无需开启
+          cacheBust: false,
           skipFonts: true,
           imagePlaceholder: TRANSPARENT_PIXEL,
           filter: function (node) {
@@ -325,6 +397,18 @@ const { siteTitle = '' } = Astro.props;
               tag !== 'OBJECT' && tag !== 'EMBED' && tag !== 'CANVAS' && tag !== 'AUDIO';
           },
         };
+
+        // ★ Safari 核心修复：预热一次，正式结果用第二次调用
+        if (IS_SAFARI) {
+          try {
+            // 第一次调用丢弃（Safari 经常返回空白）
+            await window.htmlToImage.toPng(wrapper, {
+              pixelRatio: 0.1,
+              skipFonts: true,
+              cacheBust: false,
+            });
+          } catch (e) {}
+        }
 
         var dataUrl;
         try {
@@ -347,6 +431,12 @@ const { siteTitle = '' } = Astro.props;
           });
         }
 
+        // 如果 Safari 下 toPng 返回的结果仍然可疑（过小或为空），走 toCanvas 覆绘兜底
+        if (IS_SAFARI && (!dataUrl || dataUrl.length < 2000)) {
+          console.warn('[snowi] Safari toPng 结果可疑，启用 toCanvas 覆绘兜底');
+          dataUrl = await captureWithOverdraw(wrapper, captureOptions);
+        }
+
         if (!dataUrl || dataUrl.indexOf('data:image') !== 0) {
           throw new Error('empty capture');
         }
@@ -355,15 +445,7 @@ const { siteTitle = '' } = Astro.props;
           type === 'index'
             ? 'Snowi-'
             : 'Snowi-' + type.charAt(0).toUpperCase() + type.slice(1) + '-';
-        var link = document.createElement('a');
-        link.download = prefix + Date.now() + '.png';
-        link.href = dataUrl;
-        try {
-          link.click();
-        } catch (downloadErr) {
-          console.error('截图下载失败:', downloadErr);
-          alert('图片已生成，但下载被浏览器拦截，请允许下载后重试。');
-        }
+        await triggerDownload(dataUrl, prefix + Date.now() + '.png');
       } catch (err) {
         console.error('截图失败:', err);
         alert('截图生成失败：' + (err && err.message ? err.message : '请稍后重试。'));
@@ -430,13 +512,11 @@ const { siteTitle = '' } = Astro.props;
       if (selection) return;
 
       e.preventDefault();
-      // 触发覆盖层链接的真实点击，让 Swup 的链接拦截接管（未启用时退化为普通跳转）
       overlay.click();
     });
 
     /* ================= Swup / Astro 切页 ================= */
 
-    // Swup 的 fade 主题在缓存页面/快速替换时可能跳过 in 动画；这里统一补一个淡入
     document.addEventListener('astro:after-swap', function () {
       var main = document.getElementById('main');
       if (!main) return;
@@ -446,13 +526,8 @@ const { siteTitle = '' } = Astro.props;
     });
 
     document.addEventListener('astro:page-load', function () {
-      // 换页后同步主题按钮的文字与图标
       syncThemeUI();
-
-      // 新页面若包含播放器而脚本尚未加载，则补载
       ensureMoodPlayer();
-
-      // 兼容仍监听 page:view 的插件（LivePhoto、Lightbox、网易云音乐等）
       try {
         document.dispatchEvent(new Event('page:view'));
       } catch (e) {}
