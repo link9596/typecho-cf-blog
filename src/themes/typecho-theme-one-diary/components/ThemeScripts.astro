@@ -20,7 +20,7 @@ const { siteTitle = '' } = Astro.props;
     var STORAGE_KEY = 'snowi-theme';
     var LEGACY_KEY = 'theme';
 
-    /* ================= 主题切换（原样保留） ================= */
+    /* ================= 主题切换 ================= */
 
     function getStoredTheme() {
       try { return localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY); }
@@ -53,7 +53,7 @@ const { siteTitle = '' } = Astro.props;
     else if (storedTheme === 'light') root.classList.remove('snowi-dark');
     syncThemeUI();
 
-    /* ================= 评论回复（原样保留） ================= */
+    /* ================= 评论回复 ================= */
 
     window.TypechoComment = {
       dom: function (id) { return document.getElementById(id); },
@@ -77,7 +77,7 @@ const { siteTitle = '' } = Astro.props;
       }
     };
 
-    /* ================= 播放器（原样保留） ================= */
+    /* ================= 播放器 ================= */
 
     function ensureMoodPlayer() {
       try {
@@ -95,12 +95,12 @@ const { siteTitle = '' } = Astro.props;
     ensureMoodPlayer();
 
     /* =========================================================
-     *                分享截图 —— Canvas 精绘方案
+     *                分享截图 —— Canvas 高精度精绘方案
      * ========================================================= */
 
-    var SCALE = 2;
-
-    /* ---------- 通用路径 ---------- */
+    var SCALE = 3;    // 3倍图，提升分辨率
+    var PAD = 24;     // 外围留白宽度
+    var WATERMARK_H = 32; // 底部留给水印的高度
 
     function roundRectPath(ctx, x, y, w, h, r) {
       r = Math.min(r, w / 2, h / 2);
@@ -135,8 +135,6 @@ const { siteTitle = '' } = Astro.props;
       ctx.closePath();
     }
 
-    /* ---------- 安全加载图片（带 CORS + 破缓存） ---------- */
-
     function loadSafeImage(src) {
       return new Promise(function (resolve) {
         if (!src) return resolve(null);
@@ -166,14 +164,8 @@ const { siteTitle = '' } = Astro.props;
       return map;
     }
 
-    /* ---------- 文字绘制 ---------- */
-
     function fillTextWithLetterSpacing(ctx, text, x, y, spacing) {
-      if (!spacing) {
-        ctx.fillText(text, x, y);
-        return;
-      }
-      // 中文场景近似：单个字符依次偏移
+      if (!spacing) { ctx.fillText(text, x, y); return; }
       var chars = Array.from(text);
       var cx = x;
       for (var i = 0; i < chars.length; i++) {
@@ -185,7 +177,6 @@ const { siteTitle = '' } = Astro.props;
     function drawTextNode(ctx, textNode, baseX, baseY) {
       var text = textNode.textContent;
       if (!text || !text.trim()) return;
-
       var parent = textNode.parentElement;
       if (!parent) return;
       var style = getComputedStyle(parent);
@@ -195,9 +186,7 @@ const { siteTitle = '' } = Astro.props;
       var color = style.color || '#000';
       var letterSpacing = parseFloat(style.letterSpacing) || 0;
       var underline = style.textDecorationLine && style.textDecorationLine.indexOf('underline') !== -1;
-      var underlineColor = style.textDecorationColor && style.textDecorationColor !== 'currentcolor'
-        ? style.textDecorationColor
-        : color;
+      var underlineColor = style.textDecorationColor && style.textDecorationColor !== 'currentcolor' ? style.textDecorationColor : color;
 
       ctx.save();
       ctx.font = fontWeight + ' ' + fontSize + 'px ' + fontFamily;
@@ -205,7 +194,6 @@ const { siteTitle = '' } = Astro.props;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
-      // 用 Range 逐行获取视觉矩形
       var range = document.createRange();
       range.selectNodeContents(textNode);
       var rects = range.getClientRects();
@@ -225,7 +213,6 @@ const { siteTitle = '' } = Astro.props;
         return;
       }
 
-      // 多行：逐字符判断所属视觉行
       var chars = Array.from(text);
       var charRange = document.createRange();
       var lineGroups = [];
@@ -236,22 +223,16 @@ const { siteTitle = '' } = Astro.props;
         charRange.setEnd(textNode, i + 1);
         var cr = charRange.getBoundingClientRect();
         if (cr.width === 0 && cr.height === 0) continue;
-
         var midY = (cr.top + cr.bottom) / 2;
         var lineIdx = -1;
         for (var j = 0; j < rects.length; j++) {
-          if (Math.abs(midY - (rects[j].top + rects[j].bottom) / 2) < 3) {
-            lineIdx = j; break;
-          }
+          if (Math.abs(midY - (rects[j].top + rects[j].bottom) / 2) < 3) { lineIdx = j; break; }
         }
         if (lineIdx === -1) continue;
-
         if (!currentLine || currentLine.lineIdx !== lineIdx) {
           currentLine = { lineIdx: lineIdx, start: i, end: i + 1 };
           lineGroups.push(currentLine);
-        } else {
-          currentLine.end = i + 1;
-        }
+        } else { currentLine.end = i + 1; }
       }
 
       for (var g = 0; g < lineGroups.length; g++) {
@@ -271,8 +252,6 @@ const { siteTitle = '' } = Astro.props;
       ctx.restore();
     }
 
-    /* ---------- 图片绘制 ---------- */
-
     function drawImageEl(ctx, imgEl, baseX, baseY, imgMap) {
       var r = imgEl.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
@@ -280,10 +259,8 @@ const { siteTitle = '' } = Astro.props;
       var y = r.top - baseY;
       var w = r.width;
       var h = r.height;
-
       var style = getComputedStyle(imgEl);
       var radius = parseFloat(style.borderTopLeftRadius) || 0;
-
       var safe = imgMap.get(imgEl) || null;
       var nw = safe ? safe.naturalWidth : 0;
       var nh = safe ? safe.naturalHeight : 0;
@@ -293,26 +270,20 @@ const { siteTitle = '' } = Astro.props;
         roundRectPath(ctx, x, y, w, h, radius);
         ctx.clip();
       }
-
       if (!safe || !nw || !nh) {
-        // 兜底占位色
         ctx.fillStyle = style.backgroundColor || '#eeeeee';
         ctx.fillRect(x, y, w, h);
         ctx.restore();
         return;
       }
-
       var dstRatio = w / h;
       var srcRatio = nw / nh;
       var sx = 0, sy = 0, sw = nw, sh = nh;
       var fit = style.objectFit;
 
       if (fit === 'cover') {
-        if (srcRatio > dstRatio) {
-          sw = nh * dstRatio; sx = (nw - sw) / 2;
-        } else if (srcRatio < dstRatio) {
-          sh = nw / dstRatio; sy = (nh - sh) / 2;
-        }
+        if (srcRatio > dstRatio) { sw = nh * dstRatio; sx = (nw - sw) / 2; }
+        else if (srcRatio < dstRatio) { sh = nw / dstRatio; sy = (nh - sh) / 2; }
       } else if (fit === 'contain') {
         var scale = Math.min(w / nw, h / nh);
         var dw = nw * scale;
@@ -323,16 +294,10 @@ const { siteTitle = '' } = Astro.props;
         ctx.restore();
         return;
       }
-
       try { ctx.drawImage(safe, sx, sy, sw, sh, x, y, w, h); }
-      catch (e) {
-        ctx.fillStyle = style.backgroundColor || '#eeeeee';
-        ctx.fillRect(x, y, w, h);
-      }
+      catch (e) { ctx.fillStyle = style.backgroundColor || '#eeeeee'; ctx.fillRect(x, y, w, h); }
       ctx.restore();
     }
-
-    /* ---------- SVG 绘制 ---------- */
 
     function svgElementToPath(el) {
       var tag = el.tagName.toLowerCase();
@@ -344,36 +309,26 @@ const { siteTitle = '' } = Astro.props;
         try { return new Path2D(d); } catch (e) { return null; }
       }
       if (tag === 'line') {
-        p = new Path2D();
-        p.moveTo(a('x1'), a('y1'));
-        p.lineTo(a('x2'), a('y2'));
-        return p;
+        p = new Path2D(); p.moveTo(a('x1'), a('y1')); p.lineTo(a('x2'), a('y2')); return p;
       }
       if (tag === 'polyline' || tag === 'polygon') {
         var raw = (el.getAttribute('points') || '').trim();
         if (!raw) return null;
         var pts = raw.split(/[\s,]+/).map(Number);
         if (pts.length < 4) return null;
-        p = new Path2D();
-        p.moveTo(pts[0], pts[1]);
+        p = new Path2D(); p.moveTo(pts[0], pts[1]);
         for (var i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
         if (tag === 'polygon') p.closePath();
         return p;
       }
       if (tag === 'circle') {
-        p = new Path2D();
-        p.arc(a('cx'), a('cy'), a('r'), 0, Math.PI * 2);
-        return p;
+        p = new Path2D(); p.arc(a('cx'), a('cy'), a('r'), 0, Math.PI * 2); return p;
       }
       if (tag === 'rect') {
-        p = new Path2D();
-        p.rect(a('x'), a('y'), a('width'), a('height'));
-        return p;
+        p = new Path2D(); p.rect(a('x'), a('y'), a('width'), a('height')); return p;
       }
       if (tag === 'ellipse') {
-        p = new Path2D();
-        p.ellipse(a('cx'), a('cy'), a('rx'), a('ry'), 0, 0, Math.PI * 2);
-        return p;
+        p = new Path2D(); p.ellipse(a('cx'), a('cy'), a('rx'), a('ry'), 0, 0, Math.PI * 2); return p;
       }
       return null;
     }
@@ -381,7 +336,6 @@ const { siteTitle = '' } = Astro.props;
     function drawSvg(ctx, svgEl, baseX, baseY) {
       var r = svgEl.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
-
       var vb = svgEl.getAttribute('viewBox');
       if (!vb) return;
       var parts = vb.trim().split(/[\s,]+/).map(Number);
@@ -408,19 +362,14 @@ const { siteTitle = '' } = Astro.props;
         ctx.lineJoin = cs.strokeLinejoin || 'round';
 
         if (fill && fill !== 'none' && fill !== 'rgba(0, 0, 0, 0)') {
-          ctx.fillStyle = fill;
-          ctx.fill(path);
+          ctx.fillStyle = fill; ctx.fill(path);
         }
         if (stroke && stroke !== 'none') {
-          ctx.strokeStyle = stroke;
-          ctx.lineWidth = sw;
-          ctx.stroke(path);
+          ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.stroke(path);
         }
       }
       ctx.restore();
     }
-
-    /* ---------- 递归遍历绘制 ---------- */
 
     async function drawNode(node, ctx, baseX, baseY, imgMap) {
       if (node.nodeType === Node.TEXT_NODE) {
@@ -432,123 +381,131 @@ const { siteTitle = '' } = Astro.props;
       var el = node;
       var tag = el.tagName;
 
-      // 跳过
       if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEMPLATE') return;
-      if (el.classList.contains('card-overlay')) return;
-      if (el.classList.contains('snowi-capture-overlay')) return;
-      if (el.id === 'snowiThemeToggle' || el.id === 'themeToggle') {
-        // 主题切换按钮在页脚不在卡片里，保险跳过
-      }
+      if (el.classList.contains('card-overlay') || el.classList.contains('snowi-capture-overlay')) return;
 
       var style = getComputedStyle(el);
-      if (style.display === 'none') return;
-      if (style.visibility === 'hidden') return;
-      if (parseFloat(style.opacity) === 0) return;
-
-      // video：跳过（截图前会 pause，live-photo 用 img poster 呈现）
+      if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return;
       if (tag === 'VIDEO') return;
 
-      // 元素背景
+      var rect = el.getBoundingClientRect();
+      var x = rect.left - baseX;
+      var y = rect.top - baseY;
+      var w = rect.width;
+      var h = rect.height;
+
+      var tl = parseFloat(style.borderTopLeftRadius) || 0;
+      var tr = parseFloat(style.borderTopRightRadius) || 0;
+      var br = parseFloat(style.borderBottomRightRadius) || 0;
+      var bl = parseFloat(style.borderBottomLeftRadius) || 0;
+
+      // 绘制元素背景
       var bg = style.backgroundColor;
-      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
-        var rect = el.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          var bx = rect.left - baseX;
-          var by = rect.top - baseY;
-          var bw = rect.width;
-          var bh = rect.height;
-          var tl = parseFloat(style.borderTopLeftRadius) || 0;
-          var tr = parseFloat(style.borderTopRightRadius) || 0;
-          var br = parseFloat(style.borderBottomRightRadius) || 0;
-          var bl = parseFloat(style.borderBottomLeftRadius) || 0;
-
-          ctx.save();
-          ctx.fillStyle = bg;
-          if (tl || tr || br || bl) {
-            roundRectPathCorners(ctx, bx, by, bw, bh, tl, tr, br, bl);
-            ctx.fill();
-          } else {
-            ctx.fillRect(bx, by, bw, bh);
-          }
-          ctx.restore();
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && w > 0 && h > 0) {
+        ctx.save();
+        ctx.fillStyle = bg;
+        if (tl || tr || br || bl) {
+          roundRectPathCorners(ctx, x, y, w, h, tl, tr, br, bl);
+          ctx.fill();
+        } else {
+          ctx.fillRect(x, y, w, h);
         }
+        ctx.restore();
       }
 
-      // 元素边框
+      // 绘制边框 (简化)
       var btW = parseFloat(style.borderTopWidth) || 0;
-      var btC = style.borderTopColor;
-      if (btW > 0 && btC && btC !== 'rgba(0, 0, 0, 0)' && btC !== 'transparent') {
-        var rect2 = el.getBoundingClientRect();
-        if (rect2.width > 0 && rect2.height > 0) {
-          var radius = parseFloat(style.borderTopLeftRadius) || 0;
-          ctx.save();
-          ctx.strokeStyle = btC;
-          ctx.lineWidth = btW;
-          var lx = rect2.left - baseX + btW / 2;
-          var ly = rect2.top - baseY + btW / 2;
-          var lw = rect2.width - btW;
-          var lh = rect2.height - btW;
-          if (radius > 0) roundRectPath(ctx, lx, ly, lw, lh, radius);
-          else { ctx.beginPath(); ctx.rect(lx, ly, lw, lh); }
-          ctx.stroke();
-          ctx.restore();
-        }
+      if (btW > 0 && style.borderTopColor !== 'rgba(0, 0, 0, 0)') {
+        ctx.save();
+        ctx.strokeStyle = style.borderTopColor;
+        ctx.lineWidth = btW;
+        if (tl || tr || br || bl) roundRectPathCorners(ctx, x + btW/2, y + btW/2, w - btW, h - btW, tl, tr, br, bl);
+        else { ctx.beginPath(); ctx.rect(x + btW/2, y + btW/2, w - btW, h - btW); }
+        ctx.stroke();
+        ctx.restore();
       }
 
-      // 图片
       if (tag === 'IMG') {
         drawImageEl(ctx, el, baseX, baseY, imgMap);
         return;
       }
-
-      // SVG
       if (el instanceof SVGElement) {
         drawSvg(ctx, el, baseX, baseY);
         return;
       }
 
-      // 递归
-      var kids = el.childNodes;
-      for (var i = 0; i < kids.length; i++) {
-        await drawNode(kids[i], ctx, baseX, baseY, imgMap);
+      // 处理 overflow: hidden + border-radius 的裁切
+      var isOverflowHidden = style.overflow === 'hidden' || style.overflowX === 'hidden' || style.overflowY === 'hidden';
+      var hasRadius = tl || tr || br || bl;
+
+      if (isOverflowHidden && hasRadius && w > 0 && h > 0) {
+        ctx.save();
+        roundRectPathCorners(ctx, x, y, w, h, tl, tr, br, bl);
+        ctx.clip();
+      }
+
+      // 递归子节点，并按 z-index 排序，保证标签浮在图片上方
+      var children = Array.from(el.childNodes).sort(function (a, b) {
+        if (a.nodeType === 1 && b.nodeType === 1) {
+          var sA = getComputedStyle(a);
+          var sB = getComputedStyle(b);
+          var za = (sA.position !== 'static' ? parseInt(sA.zIndex) : 0) || 0;
+          var zb = (sB.position !== 'static' ? parseInt(sB.zIndex) : 0) || 0;
+          return za - zb;
+        }
+        return 0;
+      });
+
+      for (var i = 0; i < children.length; i++) {
+        await drawNode(children[i], ctx, baseX, baseY, imgMap);
+      }
+
+      if (isOverflowHidden && hasRadius && w > 0 && h > 0) {
+        ctx.restore();
       }
     }
 
-    /* ---------- 主绘制 ---------- */
-
     async function drawCardToCanvas(card) {
-      // 1) 暂停所有视频，让 live-photo 回到静态图
+      // 暂停视频并移除播放状态
       var videos = card.querySelectorAll('video');
-      for (var i = 0; i < videos.length; i++) {
-        try { videos[i].pause(); } catch (e) {}
-      }
+      for (var i = 0; i < videos.length; i++) { try { videos[i].pause(); } catch (e) {} }
       var playing = card.querySelectorAll('.live-photo.is-playing');
-      for (var j = 0; j < playing.length; j++) {
-        playing[j].classList.remove('is-playing');
-      }
+      for (var j = 0; j < playing.length; j++) playing[j].classList.remove('is-playing');
 
-      // 2) 预加载图片（CORS 安全版本）
       var imgMap = await preloadImages(card);
 
-      // 3) 尺寸
       var cardRect = card.getBoundingClientRect();
       var W = Math.round(cardRect.width);
       var H = Math.round(cardRect.height);
 
-      // 4) Canvas
-      var canvas = document.createElement('canvas');
-      canvas.width = W * SCALE;
-      canvas.height = H * SCALE;
-      var ctx = canvas.getContext('2d');
-      ctx.scale(SCALE, SCALE);
+      // 加上边距和水印空间
+      var canvasW = W + PAD * 2;
+      var canvasH = H + PAD * 2 + WATERMARK_H;
 
-      // 5) 卡片背景 + 圆角 + 阴影
+      var canvas = document.createElement('canvas');
+      canvas.width = canvasW * SCALE;
+      canvas.height = canvasH * SCALE;
+      var ctx = canvas.getContext('2d');
+      
+      ctx.scale(SCALE, SCALE);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      // 1. 绘制外围页面背景色
+      ctx.fillStyle = isDark() ? '#121212' : '#f2f3f5';
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      // 2. 平移上下文，使 (0,0) 对准卡片
+      ctx.save();
+      ctx.translate(PAD, PAD);
+
       var cardStyle = getComputedStyle(card);
       var radius = parseFloat(cardStyle.borderTopLeftRadius) || 16;
       var bg = cardStyle.backgroundColor || '#ffffff';
 
+      // 3. 绘制卡片背景和阴影
       ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.06)';
+      ctx.shadowColor = isDark() ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.05)';
       ctx.shadowBlur = 10;
       ctx.shadowOffsetY = 2;
       roundRectPath(ctx, 0, 0, W, H, radius);
@@ -556,31 +513,37 @@ const { siteTitle = '' } = Astro.props;
       ctx.fill();
       ctx.restore();
 
-      // 6) 裁剪在卡片内
+      // 4. 裁剪卡片边界，开始绘制内部内容
       ctx.save();
       roundRectPath(ctx, 0, 0, W, H, radius);
       ctx.clip();
 
-      // 7) 递归绘制所有子节点（不画卡片本身，因为背景已画）
       var baseX = cardRect.left;
       var baseY = cardRect.top;
-
       var children = card.childNodes;
       for (var k = 0; k < children.length; k++) {
         await drawNode(children[k], ctx, baseX, baseY, imgMap);
       }
+      ctx.restore(); // 结束卡片内容裁剪
 
-      ctx.restore();
+      // 5. 绘制右下角水印
+      ctx.fillStyle = isDark() ? '#888888' : '#999999';
+      ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      // 坐标 W 是卡片右侧， H + 24 是卡片底部外
+      ctx.fillText('❄️ Snowi.', W, H + 24);
+
+      ctx.restore(); // 结束 translate
+
       return canvas;
     }
-
-    /* ---------- 下载 ---------- */
 
     function triggerDownload(canvas, filename) {
       return new Promise(function (resolve, reject) {
         try {
           canvas.toBlob(function (blob) {
-            if (!blob) { reject(new Error('canvas → blob 失败（可能是跨域图片污染）')); return; }
+            if (!blob) { reject(new Error('Canvas 污染')); return; }
             var url = URL.createObjectURL(blob);
             var link = document.createElement('a');
             link.download = filename;
@@ -594,8 +557,6 @@ const { siteTitle = '' } = Astro.props;
       });
     }
 
-    /* ---------- 提示浮层 ---------- */
-
     function showCaptureOverlay() {
       var o = document.createElement('div');
       o.className = 'snowi-capture-overlay';
@@ -603,8 +564,6 @@ const { siteTitle = '' } = Astro.props;
       document.body.appendChild(o);
       return o;
     }
-
-    /* ---------- 主流程 ---------- */
 
     async function handleShare(btn) {
       if (btn.disabled || btn.dataset.snowiBusy === '1') return;
@@ -629,7 +588,7 @@ const { siteTitle = '' } = Astro.props;
       }
     }
 
-    /* ================= 事件委托（原样保留 + 分享处理） ================= */
+    /* ================= 事件委托 ================= */
 
     document.addEventListener('click', function (e) {
       var target = e.target;
@@ -645,10 +604,7 @@ const { siteTitle = '' } = Astro.props;
         if (!form) return;
         var open = form.classList.toggle('open');
         searchBtn.classList.toggle('active', open);
-        if (open) {
-          var input = form.querySelector('input');
-          if (input) input.focus();
-        }
+        if (open) { var input = form.querySelector('input'); if (input) input.focus(); }
         return;
       }
 
@@ -670,7 +626,7 @@ const { siteTitle = '' } = Astro.props;
       cardOverlay.click();
     });
 
-    /* ================= Astro 切页（原样保留） ================= */
+    /* ================= Astro 切页 ================= */
 
     document.addEventListener('astro:after-swap', function () {
       var main = document.getElementById('main');
