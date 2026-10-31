@@ -202,7 +202,7 @@ const { siteTitle = '' } = Astro.props;
       ]);
     }
 
-    /* ---------- 图片预处理：转 Base64 + 时间戳破缓存 ---------- */
+    /* ---------- 图片预处理：转 Base64 + 时间戳破缓存 + 强制解码 ---------- */
     async function prepareCardImages(wrapper, addLog) {
       var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
       var restores = [];
@@ -261,36 +261,33 @@ const { siteTitle = '' } = Astro.props;
           image.onload = function () {
             clearTimeout(timer);
             var cost = Math.round(performance.now() - startT);
-            try {
-              var canvas = document.createElement('canvas');
-              canvas.width = image.naturalWidth || image.width || 1;
-              canvas.height = image.naturalHeight || image.height || 1;
-              canvas.getContext('2d').drawImage(image, 0, 0);
-              var dataUrl = canvas.toDataURL('image/png');
-              img.setAttribute('src', dataUrl);
-              okCount++;
-              addLog(
-                'OK',
-                '图 ' + myIdx + '/' + total + ' 成功 (' + cost + 'ms, ' +
-                Math.round(dataUrl.length / 1024) + 'KB)'
-              );
-            } catch (e) {
-              addLog(
-                'ERR',
-                '图 ' + myIdx + '/' + total + ' 转 Base64 失败: ' +
-                (e && e.message ? e.message : e)
-              );
-            }
-            resolve();
+            
+            // Safari 关键修复：强制等待图片完全解码
+            var decodePromise = typeof image.decode === 'function' ? image.decode() : Promise.resolve();
+            
+            decodePromise.then(function() {
+              try {
+                var canvas = document.createElement('canvas');
+                canvas.width = image.naturalWidth || image.width || 1;
+                canvas.height = image.naturalHeight || image.height || 1;
+                canvas.getContext('2d').drawImage(image, 0, 0);
+                var dataUrl = canvas.toDataURL('image/png');
+                img.setAttribute('src', dataUrl);
+                okCount++;
+                addLog('OK', '图 ' + myIdx + '/' + total + ' 成功 (' + cost + 'ms, ' + Math.round(dataUrl.length / 1024) + 'KB)');
+              } catch (e) {
+                addLog('ERR', '图 ' + myIdx + '/' + total + ' 转 Base64 失败: ' + (e && e.message ? e.message : e));
+              }
+              resolve();
+            }).catch(function(e) {
+              addLog('WARN', '图 ' + myIdx + '/' + total + ' 解码失败: ' + e);
+              resolve();
+            });
           };
 
           image.onerror = function () {
             clearTimeout(timer);
-            addLog(
-              'WARN',
-              '图 ' + myIdx + '/' + total + ' 跨域失败 (' +
-              Math.round(performance.now() - startT) + 'ms)'
-            );
+            addLog('WARN', '图 ' + myIdx + '/' + total + ' 跨域失败 (' + Math.round(performance.now() - startT) + 'ms)');
             resolve();
           };
 
@@ -319,10 +316,28 @@ const { siteTitle = '' } = Astro.props;
     /* ---------- Safari 专用：toCanvas + 手动覆绘图片兜底 ---------- */
     async function captureWithOverdraw(wrapper, options, addLog) {
       addLog('INFO', 'toCanvas 开始 (ratio=' + (options.pixelRatio || 1) + ')');
-      var canvas = await window.htmlToImage.toCanvas(wrapper, options);
-      addLog('OK', 'toCanvas 完成 ' + canvas.width + 'x' + canvas.height);
+      var canvas;
+      try {
+        canvas = await window.htmlToImage.toCanvas(wrapper, options);
+      } catch (e) {
+        addLog('WARN', 'toCanvas 失败，创建空白 Canvas 进行纯覆绘');
+        canvas = document.createElement('canvas');
+        var rect = wrapper.getBoundingClientRect();
+        canvas.width = rect.width * (options.pixelRatio || 1);
+        canvas.height = rect.height * (options.pixelRatio || 1);
+      }
 
+      // 检测 Canvas 是否全灰/空白（Safari 下 foreignObject 渲染图片失败的典型表现）
       var ctx = canvas.getContext('2d');
+      var pixel = ctx.getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data;
+      var isBlank = (pixel[0] > 200 && pixel[1] > 200 && pixel[2] > 200) || (pixel[3] === 0);
+
+      if (isBlank) {
+        addLog('WARN', 'Canvas 检测为空白/灰块，执行强制覆绘');
+        ctx.fillStyle = options.backgroundColor || '#f2f3f5';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
       var wrapperRect = wrapper.getBoundingClientRect();
       var scale = options.pixelRatio || 1;
       var imgs = wrapper.querySelectorAll('img');
@@ -422,31 +437,17 @@ const { siteTitle = '' } = Astro.props;
       btn.dataset.snowiBusy = '1';
 
       try {
-        /* —— 关键改动：日志元素直接作为「水印」渲染，保证出现在截图里 —— */
+        /* 将日志作为水印渲染进截图 */
         logTarget = document.createElement('div');
         logTarget.className = 'snowi-watermark snowi-capture-log';
         logTarget.style.cssText = [
-          'display:block',
-          'position:static',
-          'transform:none',
-          'opacity:1',
-          'visibility:visible',
-          'float:none',
-          'margin:16px 0 0',
-          'padding:10px 12px',
-          'background:rgba(127,127,127,0.10)',
-          'border-radius:6px',
+          'display:block', 'position:static', 'transform:none', 'opacity:1',
+          'visibility:visible', 'float:none', 'margin:16px 0 0', 'padding:10px 12px',
+          'background:rgba(127,127,127,0.10)', 'border-radius:6px',
           'font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace',
-          'font-size:11px',
-          'line-height:1.45',
-          'white-space:pre-wrap',
-          'word-break:break-all',
-          'text-align:left',
-          'width:100%',
-          'box-sizing:border-box',
-          'height:auto',
-          'max-height:none',
-          'overflow:visible',
+          'font-size:11px', 'line-height:1.45', 'white-space:pre-wrap',
+          'word-break:break-all', 'text-align:left', 'width:100%',
+          'box-sizing:border-box', 'height:auto', 'max-height:none', 'overflow:visible',
         ].join(';');
         wrapper.appendChild(logTarget);
 
@@ -505,72 +506,53 @@ const { siteTitle = '' } = Astro.props;
           },
         };
 
+        var dataUrl;
+        var t0 = performance.now();
+
         if (IS_SAFARI) {
           addLog('INFO', 'Safari 预热 (ratio=0.1)...');
           try {
-            await window.htmlToImage.toPng(wrapper, {
-              pixelRatio: 0.1,
-              skipFonts: true,
-              cacheBust: false,
-            });
+            await window.htmlToImage.toPng(wrapper, { pixelRatio: 0.1, skipFonts: true, cacheBust: false });
+            await window.htmlToImage.toPng(wrapper, { pixelRatio: 0.1, skipFonts: true, cacheBust: false });
             addLog('OK', '预热完成');
           } catch (e) {
             addLog('WARN', '预热失败: ' + (e && e.message ? e.message : e));
           }
-        }
 
-        var dataUrl;
-        var t0 = performance.now();
-        addLog('INFO', 'toPng 开始...');
-        try {
-          dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
-          addLog(
-            'OK',
-            'toPng 成功 (' + Math.round(performance.now() - t0) + 'ms, len=' +
-            (dataUrl ? dataUrl.length : 0) + ')'
-          );
-        } catch (firstErr) {
-          addLog('ERR', 'toPng 失败: ' + (firstErr && firstErr.message ? firstErr.message : firstErr));
-          addLog('INFO', '回退 toPng (ratio=1)...');
-          var t1 = performance.now();
-          dataUrl = await window.htmlToImage.toPng(wrapper, {
-            backgroundColor: currentBg,
-            pixelRatio: 1,
-            cacheBust: false,
-            skipFonts: true,
-            imagePlaceholder: TRANSPARENT_PIXEL,
-            filter: function (node) {
-              var tag = node.tagName;
-              var isHeavy = node.nodeType === 1 && node.classList &&
-                (node.classList.contains('live-photo-badge') ||
-                  node.classList.contains('player-placeholder'));
-              return !isHeavy && tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' &&
-                tag !== 'IFRAME' && tag !== 'OBJECT' && tag !== 'EMBED' &&
-                tag !== 'CANVAS' && tag !== 'AUDIO';
-            },
-          });
-          addLog(
-            'OK',
-            '回退成功 (' + Math.round(performance.now() - t1) + 'ms, len=' +
-            (dataUrl ? dataUrl.length : 0) + ')'
-          );
-        }
-
-        if (IS_SAFARI && (!dataUrl || dataUrl.length < 2000)) {
-          addLog('WARN', '结果可疑 len=' + (dataUrl ? dataUrl.length : 0) + '，启用覆绘兜底');
-          var t2 = performance.now();
-          dataUrl = await captureWithOverdraw(wrapper, captureOptions, addLog);
-          addLog('OK', '覆绘成功 (' + Math.round(performance.now() - t2) + 'ms)');
+          // Safari 下我们不太信任 toPng 的结果，直接强行覆绘
+          addLog('INFO', 'Safari 环境，跳过 toPng，直接使用覆绘兜底');
+          try {
+            dataUrl = await captureWithOverdraw(wrapper, captureOptions, addLog);
+          } catch (e) {
+            addLog('ERR', '覆绘失败，尝试最后一次 toPng: ' + (e && e.message ? e.message : e));
+            dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
+          }
+        } else {
+          addLog('INFO', 'toPng 开始...');
+          try {
+            dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
+            addLog('OK', 'toPng 成功 (' + Math.round(performance.now() - t0) + 'ms, len=' + (dataUrl ? dataUrl.length : 0) + ')');
+          } catch (firstErr) {
+            addLog('ERR', 'toPng 失败: ' + (firstErr && firstErr.message ? firstErr.message : firstErr));
+            addLog('INFO', '回退 toPng (ratio=1)...');
+            var t1 = performance.now();
+            dataUrl = await window.htmlToImage.toPng(wrapper, {
+              backgroundColor: currentBg, pixelRatio: 1, cacheBust: false, skipFonts: true, imagePlaceholder: TRANSPARENT_PIXEL,
+              filter: function (node) {
+                var tag = node.tagName;
+                var isHeavy = node.nodeType === 1 && node.classList && (node.classList.contains('live-photo-badge') || node.classList.contains('player-placeholder'));
+                return !isHeavy && tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' && tag !== 'IFRAME' && tag !== 'OBJECT' && tag !== 'EMBED' && tag !== 'CANVAS' && tag !== 'AUDIO';
+              },
+            });
+            addLog('OK', '回退成功 (' + Math.round(performance.now() - t1) + 'ms, len=' + (dataUrl ? dataUrl.length : 0) + ')');
+          }
         }
 
         if (!dataUrl || dataUrl.indexOf('data:image') !== 0) {
           throw new Error('empty capture');
         }
 
-        var prefix =
-          type === 'index'
-            ? 'Snowi-'
-            : 'Snowi-' + type.charAt(0).toUpperCase() + type.slice(1) + '-';
+        var prefix = type === 'index' ? 'Snowi-' : 'Snowi-' + type.charAt(0).toUpperCase() + type.slice(1) + '-';
         var filename = prefix + Date.now() + '.png';
         addLog('INFO', '下载: ' + filename);
         await triggerDownload(dataUrl, filename);
@@ -595,7 +577,6 @@ const { siteTitle = '' } = Astro.props;
         btn.disabled = false;
         delete btn.dataset.snowiBusy;
 
-        /* 失败时把日志直接带给用户（图片没能生成，只能靠 alert） */
         if (finalError) {
           var lastLines = logLines.slice(-6).join('\n');
           var errMsg = finalError.message || String(finalError);
