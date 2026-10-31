@@ -100,7 +100,6 @@ html.snowi-dark body {
 
 .snowi-page .site-title {
   font-size: 32px;
-  font-weight: 800;
   letter-spacing: 1px;
   color: var(--text-main);
   margin: 0 0 8px;
@@ -118,7 +117,6 @@ html.snowi-dark body {
 .snowi-page .header-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
 }
 
 .snowi-page .nav-item {
