@@ -135,6 +135,8 @@ const { siteTitle = '' } = Astro.props;
     /* ================= 分享截图（html-to-image） ================= */
 
     var SNAPSHOT_SRC = '/js/screenshot.js';
+    var TRANSPARENT_PIXEL =
+      'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
     function ensureHtmlToImage() {
       if (window.htmlToImage && typeof window.htmlToImage.toPng === 'function') {
@@ -175,8 +177,9 @@ const { siteTitle = '' } = Astro.props;
     }
 
     /*
-     * 终极 Safari 兼容方案：XHR 抓取二进制流转 Base64。
-     * 如果失败，绝对不替换为透明图，保留原样。
+     * 针对 Safari 的严格防御：
+     * 使用 decode() 等待解码完成，如果浏览器因为跨域拒绝读取，
+     * 直接将图片替换为透明占位，避免 html-to-image 抛错导致程序崩溃。
      */
     async function prepareCardImages(wrapper) {
       var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
@@ -202,34 +205,46 @@ const { siteTitle = '' } = Astro.props;
         img.removeAttribute('sizes');
         
         tasks.push(new Promise(function(resolve) {
-          var xhr = new XMLHttpRequest();
+          var image = new Image();
+          image.crossOrigin = 'anonymous';
           var cacheBustUrl = src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_t=' + Date.now();
-          
-          xhr.open('GET', cacheBustUrl, true);
-          xhr.responseType = 'blob';
-          xhr.timeout = 5000;
-          
-          xhr.onload = function() {
-            if (xhr.status === 200) {
-              var reader = new FileReader();
-              reader.onloadend = function() {
-                if (reader.result) {
-                  img.setAttribute('src', reader.result); // 转为纯 Base64
-                }
-                resolve();
-              };
-              reader.readAsDataURL(xhr.response);
+
+          var timer = setTimeout(function() {
+            console.warn('[snowi] 图片处理超时，替换为透明占位:', src);
+            img.setAttribute('src', TRANSPARENT_PIXEL);
+            resolve();
+          }, 5000);
+
+          // 关键：使用 decode() 让 Safari 完全解码图片
+          image.onload = function () {
+            if (typeof image.decode === 'function') {
+              image.decode()
+                .then(function () {
+                  clearTimeout(timer);
+                  img.setAttribute('src', cacheBustUrl);
+                  resolve();
+                })
+                .catch(function (err) {
+                  clearTimeout(timer);
+                  console.warn('[snowi] Safari 拒绝解码跨域图片，替换为透明占位:', src, err);
+                  img.setAttribute('src', TRANSPARENT_PIXEL);
+                  resolve();
+                });
             } else {
-              resolve(); // 失败保留原样
+              clearTimeout(timer);
+              img.setAttribute('src', cacheBustUrl);
+              resolve();
             }
           };
-          
-          xhr.onerror = xhr.ontimeout = function() {
-            console.warn('[snowi] XHR 获取失败，保留原图:', src);
-            resolve(); // 失败保留原样
+
+          image.onerror = function () {
+            clearTimeout(timer);
+            console.warn('[snowi] 图片跨域加载失败，替换为透明占位:', cacheBustUrl);
+            img.setAttribute('src', TRANSPARENT_PIXEL);
+            resolve();
           };
-          
-          xhr.send();
+
+          image.src = cacheBustUrl;
         }));
       });
 
@@ -299,12 +314,12 @@ const { siteTitle = '' } = Astro.props;
       try {
         restoreImages = await prepareCardImages(wrapper);
 
-        // ⚠️ 彻底移除了 imagePlaceholder，绝不让库自己画占位图
         var captureOptions = {
           backgroundColor: currentBg,
           pixelRatio: highResScale,
           cacheBust: false, 
           skipFonts: true,
+          imagePlaceholder: TRANSPARENT_PIXEL,
           filter: function (node) {
             var tag = node.tagName;
             return tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' && tag !== 'IFRAME' &&
@@ -314,18 +329,19 @@ const { siteTitle = '' } = Astro.props;
 
         var dataUrl;
         try {
-          // Safari 预热
+          // Safari 预热：防止首次渲染假死
           try {
             await window.htmlToImage.toPng(wrapper, {
               pixelRatio: 0.1,
               skipFonts: true,
               cacheBust: false,
-              filter: function(node) { return node.tagName !== 'IMG'; } 
+              filter: function(node) { return node.tagName !== 'IMG'; } // 预热时剔除图片
             });
           } catch (warmUpErr) {
             console.warn('Safari 预热失败:', warmUpErr);
           }
 
+          // 正式截图
           dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
         } catch (firstErr) {
           console.warn('截图首次失败，尝试轻量回退:', firstErr);
@@ -334,6 +350,7 @@ const { siteTitle = '' } = Astro.props;
             pixelRatio: 1,
             cacheBust: false,
             skipFonts: true,
+            imagePlaceholder: TRANSPARENT_PIXEL,
             filter: function (node) {
               var tag = node.tagName;
               var isHeavy = node.nodeType === 1 && node.classList &&
@@ -363,8 +380,7 @@ const { siteTitle = '' } = Astro.props;
         }
       } catch (err) {
         console.error('【!!! 截图彻底失败，请查看此错误 !!!】:', err);
-        var errorDetails = err.name + ': ' + err.message;
-        alert('截图生成失败！Safari 报错信息：\n' + errorDetails);
+        alert('截图生成失败：' + (err && err.message ? err.message : '请稍后重试。\n如果是 Safari，请尝试刷新页面。'));
       } finally {
         restoreImages();
         watermark.remove();
