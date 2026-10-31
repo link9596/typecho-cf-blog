@@ -12,6 +12,7 @@
 import Base from '@/layouts/Base.astro';
 import CommentList from './CommentList.astro';
 import type { ThemePageProps } from '@/lib/theme-props';
+import { getDateParts } from '@/lib/content';
 import GlobalPlayer from './GlobalPlayer.astro';
 import ThemeScripts from './ThemeScripts.astro';
 
@@ -35,44 +36,6 @@ const hasSidebar =
   recentComments.length > 0 ||
   sidebarCategories.length > 0 ||
   archives.length > 0;
-
-/* 日期拆解：日 / 星期 / 年-月 / 时:分 */
-type DateParts = { day: string; weekday: string; yearMonth: string; time: string };
-
-function getDateParts(ts: number, tz?: string): DateParts {
-  try {
-    const fmt = new Intl.DateTimeFormat('zh-CN', {
-      timeZone: tz || undefined,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      weekday: 'short',
-    });
-    const parts = fmt.formatToParts(new Date(ts * 1000));
-    const pick = (t: string) => parts.find((p) => p.type === t)?.value || '';
-    let hour = pick('hour');
-    if (hour === '24') hour = '00';
-    const weekday = pick('weekday').replace('星期', '周').replace('周天', '周日');
-    return {
-      day: pick('day'),
-      weekday,
-      yearMonth: `${pick('year')}/${pick('month')}`,
-      time: `${hour}:${pick('minute')}`,
-    };
-  } catch {
-    const d = new Date(ts * 1000);
-    const p2 = (n: number) => String(n).padStart(2, '0');
-    return {
-      day: p2(d.getDate()),
-      weekday: '',
-      yearMonth: `${d.getFullYear()}/${p2(d.getMonth() + 1)}`,
-      time: `${p2(d.getHours())}:${p2(d.getMinutes())}`,
-    };
-  }
-}
 
 const pageDate = getDateParts(page.created, options.timezone);
 const canSeeContent = !page.hasPassword || page.passwordVerified;

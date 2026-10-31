@@ -162,6 +162,34 @@ export function buildSearchLink(keywords: string, siteUrl: string): string {
   return `${siteUrl.replace(/\/$/, '')}/search/${encodeURIComponent(keywords)}/`;
 }
 
+export interface DateParts {
+  day: string;
+  weekday: string;
+  yearMonth: string;
+  time: string;
+}
+
+const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+/**
+ * Break a Unix timestamp into theme date parts using a fixed timezone offset.
+ * `timezoneOffset` is the Typecho option value in seconds (28800 = UTC+8).
+ */
+export function getDateParts(timestamp: number, timezoneOffset = 28800): DateParts {
+  const offset = typeof timezoneOffset === 'number' && Number.isFinite(timezoneOffset)
+    ? timezoneOffset
+    : 28800;
+  const date = new Date((timestamp + offset) * 1000);
+  const p2 = (n: number) => String(n).padStart(2, '0');
+
+  return {
+    day: p2(date.getUTCDate()),
+    weekday: WEEKDAY_LABELS[date.getUTCDay()] || '',
+    yearMonth: `${date.getUTCFullYear()}/${p2(date.getUTCMonth() + 1)}`,
+    time: `${p2(date.getUTCHours())}:${p2(date.getUTCMinutes())}`,
+  };
+}
+
 /**
  * Format a Unix timestamp using PHP-style date formatting
  * Supports common PHP date format characters

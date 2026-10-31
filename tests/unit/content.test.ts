@@ -13,6 +13,7 @@ import {
   buildAuthorLink,
   getRedirectPathIfDifferent,
   formatDate,
+  getDateParts,
 } from '@/lib/content';
 
 // ---------------------------------------------------------------------------
@@ -215,5 +216,30 @@ describe('formatDate()', () => {
     // \a\t in format should be literal "at"
     const result = formatDate(ts, 'Y-m-d \\a\\t H:i', 0);
     expect(result).toBe('2026-03-15 at 12:30');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getDateParts
+// ---------------------------------------------------------------------------
+describe('getDateParts()', () => {
+  const ts = Math.floor(new Date('2026-03-15T17:30:00Z').getTime() / 1000);
+
+  it('uses the fixed Typecho timezone offset (UTC+8)', () => {
+    expect(getDateParts(ts, 28800)).toEqual({
+      day: '16',
+      weekday: '周一',
+      yearMonth: '2026/03',
+      time: '01:30',
+    });
+  });
+
+  it('respects offset 0 as UTC', () => {
+    expect(getDateParts(ts, 0)).toEqual({
+      day: '15',
+      weekday: '周日',
+      yearMonth: '2026/03',
+      time: '17:30',
+    });
   });
 });
