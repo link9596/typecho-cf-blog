@@ -1,4 +1,3 @@
----
 /**
  * Snowi theme — shared client behaviour
  *
@@ -176,67 +175,10 @@ const { siteTitle = '' } = Astro.props;
       return overlay;
     }
 
-    /* ---------- 新增：等待字体就绪（避免布局抖动） ---------- */
-
-    function waitFonts(timeout) {
-      if (!document.fonts || !document.fonts.ready) return Promise.resolve();
-      return Promise.race([
-        document.fonts.ready,
-        new Promise(function (resolve) {
-          setTimeout(resolve, timeout || 2500);
-        }),
-      ]);
-    }
-
-    /* ---------- 新增：把单张图片尽量转成 dataURL（防 canvas 污染） ---------- */
-
-    function toDataURLIfPossible(src, timeout) {
-      if (!src || /^(data:|blob:)/i.test(src)) return Promise.resolve(src);
-      return new Promise(function (resolve) {
-        var done = false;
-        var timer = setTimeout(function () {
-          if (done) return;
-          done = true;
-          resolve(null);
-        }, timeout || 6000);
-
-        var probe = new Image();
-        probe.crossOrigin = 'anonymous';
-
-        probe.onload = function () {
-          if (done) return;
-          done = true;
-          clearTimeout(timer);
-          try {
-            var w = probe.naturalWidth || probe.width;
-            var h = probe.naturalHeight || probe.height;
-            if (!w || !h) {
-              resolve(null);
-              return;
-            }
-            var canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext('2d').drawImage(probe, 0, 0);
-            resolve(canvas.toDataURL('image/png'));
-          } catch (e) {
-            resolve(null);
-          }
-        };
-
-        probe.onerror = function () {
-          if (done) return;
-          done = true;
-          clearTimeout(timer);
-          resolve(null);
-        };
-
-        probe.src = src;
-      });
-    }
-
-    /* ---------- 改写：准备卡片图片（尝试全部内联为 dataURL） ---------- */
-
+    /*
+     * 截图前的图片预处理：
+     * 关键修复：给图片 URL 加上时间戳，强制绕过浏览器的“无 CORS 头”脏缓存！
+     */
     async function prepareCardImages(wrapper) {
       var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
       var restores = [];
@@ -244,7 +186,7 @@ const { siteTitle = '' } = Astro.props;
 
       imgs.forEach(function (img) {
         var src = img.getAttribute('src') || '';
-        if (!src) return;
+        if (!src || /^(data:|blob:)/i.test(src)) return;
 
         var original = {
           img: img,
@@ -256,26 +198,55 @@ const { siteTitle = '' } = Astro.props;
         };
         restores.push(original);
 
-        // 移除 srcset/sizes，避免多分辨率干扰
-        img.removeAttribute('srcset');
-        img.removeAttribute('sizes');
+        // 移除懒加载，确保图片能立刻解码
         img.removeAttribute('loading');
 
-        tasks.push(
-          toDataURLIfPossible(src).then(function (dataUrl) {
-            if (dataUrl && dataUrl !== src) {
-              // 成功内联为 dataURL，html-to-image 会直接使用，不再触发跨域
+        // 创建 Promise 等待图片变成 Base64
+        tasks.push(new Promise(function (resolve) {
+          var image = new Image();
+          image.crossOrigin = 'anonymous'; // 强制走 CORS 请求
+          
+          // ⚠️ 核心修复点：加入时间戳，强制浏览器重新向 R2 服务器请求，不带这个时间戳就会命中脏缓存导致画布污染
+          var cacheBustUrl = src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_t=' + Date.now();
+          
+          var timer = setTimeout(function() { 
+            console.warn('[snowi] 图片加载超时:', src);
+            resolve(); 
+          }, 5000);
+          
+          image.onload = function () {
+            clearTimeout(timer);
+            try {
+              var canvas = document.createElement('canvas');
+              canvas.width = image.naturalWidth || image.width || 1;
+              canvas.height = image.naturalHeight || image.height || 1;
+              var ctx = canvas.getContext('2d');
+              ctx.drawImage(image, 0, 0);
+              // 成功转为 Base64，替换原本的 src
+              var dataUrl = canvas.toDataURL('image/png');
+              img.removeAttribute('srcset');
+              img.removeAttribute('sizes');
               img.setAttribute('src', dataUrl);
-            } else {
-              // 无法内联（如防盗链 / 无 CORS）：移除 crossOrigin，保持原图正常显示
-              img.removeAttribute('crossorigin');
+            } catch (e) {
+              console.warn('[snowi] 图片转 Base64 失败(画布污染):', src, e);
             }
-          })
-        );
+            resolve();
+          };
+          
+          image.onerror = function () {
+            clearTimeout(timer);
+            console.warn('[snowi] 图片跨域加载失败:', cacheBustUrl);
+            resolve(); // 失败也继续，不要卡死整体流程
+          };
+          
+          image.src = cacheBustUrl;
+        }));
       });
 
+      // ★ 必须等待所有图片都处理完再继续
       await Promise.all(tasks);
 
+      // 返回恢复函数
       return function restore() {
         restores.forEach(function (item) {
           item.img.setAttribute('src', item.src);
@@ -290,67 +261,6 @@ const { siteTitle = '' } = Astro.props;
         });
       };
     }
-
-    /* ---------- 新增：安全截图，带三级降级 ---------- */
-
-    async function safeCapture(wrapper, options) {
-      // 1) 常规路线（图片已内联 dataURL）
-      try {
-        return await window.htmlToImage.toPng(wrapper, options);
-      } catch (err1) {
-        console.warn('[snowi] toPng 失败，进入降级:', err1);
-      }
-
-      // 2) 移除仍未内联的外部图片后再试（避免个别图污染导致整张失败）
-      var imgs = wrapper.querySelectorAll('img');
-      var backups = [];
-      imgs.forEach(function (img) {
-        var s = img.getAttribute('src') || '';
-        if (s && !/^(data:|blob:)/i.test(s)) {
-          backups.push({ img: img, src: s });
-          img.setAttribute('src', TRANSPARENT_PIXEL);
-        }
-      });
-
-      if (backups.length) {
-        try {
-          var png = await window.htmlToImage.toPng(wrapper, options);
-          backups.forEach(function (b) {
-            b.img.setAttribute('src', b.src);
-          });
-          console.warn('[snowi] 已降级为无图模式（部分外链图片未能内联）');
-          return png;
-        } catch (err2) {
-          backups.forEach(function (b) {
-            b.img.setAttribute('src', b.src);
-          });
-          console.warn('[snowi] 无图模式仍失败:', err2);
-        }
-      }
-
-      // 3) 最后尝试 SVG（体积小、兼容性略好）
-      var svg = await window.htmlToImage.toSvg(wrapper, options);
-      if (svg && svg.indexOf('data:image/svg') === 0) {
-        console.warn('[snowi] 已降级为 SVG 输出');
-      }
-      return svg;
-    }
-
-    /* ---------- 新增：统一下载（兼容 SVG / PNG） ---------- */
-
-    function triggerDownload(dataUrl, filename) {
-      var link = document.createElement('a');
-      link.download = filename;
-      link.href = dataUrl;
-      try {
-        link.click();
-      } catch (downloadErr) {
-        console.error('截图下载失败:', downloadErr);
-        alert('图片已生成，但下载被浏览器拦截，请允许下载后重试。');
-      }
-    }
-
-    /* ---------- 改写：handleShare ---------- */
 
     async function handleShare(btn) {
       if (btn.disabled || btn.dataset.snowiBusy === '1') return;
@@ -369,12 +279,7 @@ const { siteTitle = '' } = Astro.props;
       }
 
       var type = getPageType();
-      var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-      // Safari 对大 canvas 内存敏感，限制倍率
-      var highResScale = isSafari
-        ? Math.min(window.devicePixelRatio || 1, 1.5)
-        : (window.devicePixelRatio || 1) * 1.2;
-
+      var highResScale = (window.devicePixelRatio || 1) * 1.2;
       var pageStyle = window.getComputedStyle(pageEl);
       var currentBg = pageStyle.getPropertyValue('--bg-color').trim() || '#f2f3f5';
       var cssVars = [
@@ -404,16 +309,13 @@ const { siteTitle = '' } = Astro.props;
       var restoreImages = function () {};
 
       try {
-        // 等字体就绪，避免字体切换造成布局抖动
-        await waitFonts(2500);
-
-        // 把图片尽量内联为 dataURL
+        // 等待所有图片转换完毕
         restoreImages = await prepareCardImages(wrapper);
 
         var captureOptions = {
           backgroundColor: currentBg,
           pixelRatio: highResScale,
-          cacheBust: false,
+          cacheBust: false, // 图片已经被替换为 Base64，无需开启
           skipFonts: true,
           imagePlaceholder: TRANSPARENT_PIXEL,
           filter: function (node) {
@@ -423,29 +325,46 @@ const { siteTitle = '' } = Astro.props;
           },
         };
 
-        // Safari 预热：防止首次渲染假死或图片变灰
+        var dataUrl;
         try {
-          await window.htmlToImage.toPng(wrapper, {
-            pixelRatio: 0.1,
-            skipFonts: true,
+          dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
+        } catch (firstErr) {
+          console.warn('截图首次失败，尝试轻量回退:', firstErr);
+          dataUrl = await window.htmlToImage.toPng(wrapper, {
+            backgroundColor: currentBg,
+            pixelRatio: 1,
             cacheBust: false,
+            skipFonts: true,
+            imagePlaceholder: TRANSPARENT_PIXEL,
+            filter: function (node) {
+              var tag = node.tagName;
+              var isHeavy = node.nodeType === 1 && node.classList &&
+                (node.classList.contains('live-photo-badge') || node.classList.contains('player-placeholder'));
+              return !isHeavy && tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' &&
+                tag !== 'IFRAME' && tag !== 'OBJECT' && tag !== 'EMBED' && tag !== 'CANVAS' && tag !== 'AUDIO';
+            },
           });
-        } catch (warmUpErr) {}
-
-        var dataUrl = await safeCapture(wrapper, captureOptions);
+        }
 
         if (!dataUrl || dataUrl.indexOf('data:image') !== 0) {
-          throw new Error('截图返回为空');
+          throw new Error('empty capture');
         }
 
         var prefix =
           type === 'index'
             ? 'Snowi-'
             : 'Snowi-' + type.charAt(0).toUpperCase() + type.slice(1) + '-';
-        var ext = dataUrl.indexOf('data:image/svg') === 0 ? '.svg' : '.png';
-        triggerDownload(dataUrl, prefix + Date.now() + ext);
+        var link = document.createElement('a');
+        link.download = prefix + Date.now() + '.png';
+        link.href = dataUrl;
+        try {
+          link.click();
+        } catch (downloadErr) {
+          console.error('截图下载失败:', downloadErr);
+          alert('图片已生成，但下载被浏览器拦截，请允许下载后重试。');
+        }
       } catch (err) {
-        console.error('[snowi] 截图失败详细错误:', err);
+        console.error('截图失败:', err);
         alert('截图生成失败：' + (err && err.message ? err.message : '请稍后重试。'));
       } finally {
         restoreImages();
@@ -510,11 +429,13 @@ const { siteTitle = '' } = Astro.props;
       if (selection) return;
 
       e.preventDefault();
+      // 触发覆盖层链接的真实点击，让 Swup 的链接拦截接管（未启用时退化为普通跳转）
       overlay.click();
     });
 
     /* ================= Swup / Astro 切页 ================= */
 
+    // Swup 的 fade 主题在缓存页面/快速替换时可能跳过 in 动画；这里统一补一个淡入
     document.addEventListener('astro:after-swap', function () {
       var main = document.getElementById('main');
       if (!main) return;
@@ -524,8 +445,13 @@ const { siteTitle = '' } = Astro.props;
     });
 
     document.addEventListener('astro:page-load', function () {
+      // 换页后同步主题按钮的文字与图标
       syncThemeUI();
+
+      // 新页面若包含播放器而脚本尚未加载，则补载
       ensureMoodPlayer();
+
+      // 兼容仍监听 page:view 的插件（LivePhoto、Lightbox、网易云音乐等）
       try {
         document.dispatchEvent(new Event('page:view'));
       } catch (e) {}
