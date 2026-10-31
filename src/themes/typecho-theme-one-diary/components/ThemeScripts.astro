@@ -254,7 +254,7 @@ const { siteTitle = '' } = Astro.props;
             src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_t=' + Date.now();
 
           var timer = setTimeout(function () {
-            addLog('WARN', '图片 ' + myIdx + '/' + total + ' 超时 5s');
+            addLog('WARN', '图 ' + myIdx + '/' + total + ' 超时 5s');
             resolve();
           }, 5000);
 
@@ -390,9 +390,9 @@ const { siteTitle = '' } = Astro.props;
       if (!wrapper || !pageEl) return;
 
       var overlay = showCaptureOverlay();
-      var logEl = null;
       var logLines = [];
-      var MAX_LOG_LINES = 25;
+      var MAX_LOG_LINES = 20;
+      var logTarget = null;
       var restoreImages = function () {};
       var previousPadding = wrapper.style.padding;
       var previousOverflow = wrapper.style.overflow;
@@ -402,43 +402,54 @@ const { siteTitle = '' } = Astro.props;
         '--icon-color', '--btn-hover', '--media-bg', '--footer-bg',
         '--watermark-color',
       ];
+      var finalError = null;
+
+      function renderLog() {
+        if (!logTarget) return;
+        var body = logLines.length ? logLines.join('\n') : '(日志准备中…)';
+        logTarget.textContent = '❄️ ' + siteTitle + '\n' + body;
+      }
 
       function addLog(level, msg) {
         var line = '[' + stamp() + '] [' + level + '] ' + msg;
         logLines.push(line);
         if (logLines.length > MAX_LOG_LINES) logLines.shift();
-        if (logEl) logEl.textContent = logLines.join('\n');
-        try {
-          console.log('[snowi] ' + line);
-        } catch (e) {}
+        try { console.log('[snowi] ' + line); } catch (e) {}
+        renderLog();
       }
 
       btn.disabled = true;
       btn.dataset.snowiBusy = '1';
 
       try {
-        /* 创建内嵌日志元素（会出现在截图里） */
-        logEl = document.createElement('pre');
-        logEl.className = 'snowi-capture-log';
-        logEl.style.cssText = [
+        /* —— 关键改动：日志元素直接作为「水印」渲染，保证出现在截图里 —— */
+        logTarget = document.createElement('div');
+        logTarget.className = 'snowi-watermark snowi-capture-log';
+        logTarget.style.cssText = [
+          'display:block',
+          'position:static',
+          'transform:none',
+          'opacity:1',
+          'visibility:visible',
+          'float:none',
           'margin:16px 0 0',
           'padding:10px 12px',
-          'background:#0f1115',
-          'color:#c8c8c8',
-          'font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace',
+          'background:rgba(127,127,127,0.10)',
+          'border-radius:6px',
+          'font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace',
+          'font-size:11px',
+          'line-height:1.45',
           'white-space:pre-wrap',
           'word-break:break-all',
-          'border-radius:8px',
-          'max-height:430px',
-          'overflow:hidden',
           'text-align:left',
-          'box-sizing:border-box',
           'width:100%',
-          'border:1px solid #2a2d33',
+          'box-sizing:border-box',
+          'height:auto',
+          'max-height:none',
+          'overflow:visible',
         ].join(';');
-        wrapper.appendChild(logEl);
+        wrapper.appendChild(logTarget);
 
-        /* 让日志不被卡片 overflow:hidden 裁掉 */
         wrapper.style.overflow = 'visible';
         wrapper.style.padding = '16px 12px 20px';
 
@@ -448,11 +459,6 @@ const { siteTitle = '' } = Astro.props;
           previousVars[name] = wrapper.style.getPropertyValue(name);
           wrapper.style.setProperty(name, pageStyle.getPropertyValue(name).trim());
         });
-
-        var watermark = document.createElement('div');
-        watermark.className = 'snowi-watermark';
-        watermark.textContent = '❄️ ' + siteTitle + '.';
-        wrapper.appendChild(watermark);
 
         addLog('INFO', '=== 截图开始 ===');
         addLog('INFO', '环境: ' + (IS_SAFARI ? 'Safari' : 'Chromium') + ' DPR=' + (window.devicePixelRatio || 1));
@@ -570,17 +576,15 @@ const { siteTitle = '' } = Astro.props;
         await triggerDownload(dataUrl, filename);
         addLog('OK', '下载已触发');
       } catch (err) {
+        finalError = err;
         var msg = err && err.message ? err.message : String(err);
         addLog('ERR', '流程异常: ' + msg);
         if (err && err.stack) {
           addLog('ERR', 'stack: ' + String(err.stack).split('\n').slice(0, 2).join(' | '));
         }
-        alert('截图生成失败：' + msg + '\n\n如果方便，请截图页面或重新点分享（图片底部会含日志）。');
       } finally {
         restoreImages();
-        if (logEl && logEl.parentNode) logEl.parentNode.removeChild(logEl);
-        var watermark = wrapper.querySelector('.snowi-watermark');
-        if (watermark && watermark.parentNode) watermark.parentNode.removeChild(watermark);
+        if (logTarget && logTarget.parentNode) logTarget.parentNode.removeChild(logTarget);
         overlay.remove();
         wrapper.style.padding = previousPadding;
         wrapper.style.overflow = previousOverflow;
@@ -590,6 +594,13 @@ const { siteTitle = '' } = Astro.props;
         });
         btn.disabled = false;
         delete btn.dataset.snowiBusy;
+
+        /* 失败时把日志直接带给用户（图片没能生成，只能靠 alert） */
+        if (finalError) {
+          var lastLines = logLines.slice(-6).join('\n');
+          var errMsg = finalError.message || String(finalError);
+          alert('截图生成失败：' + errMsg + '\n\n最近日志:\n' + lastLines);
+        }
       }
     }
 
