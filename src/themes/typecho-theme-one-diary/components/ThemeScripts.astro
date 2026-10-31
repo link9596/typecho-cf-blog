@@ -132,10 +132,9 @@ const { siteTitle = '' } = Astro.props;
 
     ensureMoodPlayer();
 
-    /* ================= 分享截图（原生 Canvas 方案） ================= */
+    /* ================= 分享截图（原生 Canvas 完美还原） ================= */
 
     var FONT_STACK = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif';
-    var TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     var IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) || /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     function pad2(n) { return n < 10 ? '0' + n : '' + n; }
@@ -196,31 +195,6 @@ const { siteTitle = '' } = Astro.props;
       return lines.length ? lines : [''];
     }
 
-    /* 图标绘制函数（复用） */
-    function drawRepost(c, x, y, s, color) {
-      var topY = y + s * 0.32, botY = y + s * 0.68, left = x + s * 0.08, right = x + s * 0.92;
-      c.save(); c.strokeStyle = color; c.fillStyle = color; c.lineWidth = 1.5; c.lineCap = 'round'; c.lineJoin = 'round';
-      c.beginPath(); c.moveTo(left + s * 0.06, topY); c.lineTo(right - s * 0.14, topY); c.stroke();
-      c.beginPath(); c.moveTo(right - s * 0.30, topY - s * 0.16); c.lineTo(right - s * 0.08, topY); c.lineTo(right - s * 0.30, topY + s * 0.16); c.closePath(); c.fill();
-      c.beginPath(); c.moveTo(right - s * 0.06, botY); c.lineTo(left + s * 0.14, botY); c.stroke();
-      c.beginPath(); c.moveTo(left + s * 0.30, botY - s * 0.16); c.lineTo(left + s * 0.08, botY); c.lineTo(left + s * 0.30, botY + s * 0.16); c.closePath(); c.fill();
-      c.restore();
-    }
-    function drawComment(c, x, y, s, color) {
-      var bx = x + s * 0.08, by = y + s * 0.10, bw = s * 0.84, bh = s * 0.60, r = s * 0.18;
-      c.save(); c.strokeStyle = color; c.fillStyle = color; c.lineWidth = 1.5; c.lineJoin = 'round';
-      c.beginPath(); c.moveTo(bx + r, by); c.lineTo(bx + bw - r, by); c.quadraticCurveTo(bx + bw, by, bx + bw, by + r); c.lineTo(bx + bw, by + bh - r); c.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh); c.lineTo(bx + bw * 0.42, by + bh); c.lineTo(bx + bw * 0.24, by + bh + s * 0.20); c.lineTo(bx + bw * 0.28, by + bh); c.lineTo(bx + r, by + bh); c.quadraticCurveTo(bx, by + bh, bx, by + bh - r); c.lineTo(bx, by + r); c.quadraticCurveTo(bx, by, bx + r, by); c.closePath(); c.stroke();
-      var cy = by + bh / 2;
-      [0.30, 0.50, 0.70].forEach(function(t) { c.beginPath(); c.arc(bx + bw * t, cy, s * 0.048, 0, Math.PI * 2); c.fill(); });
-      c.restore();
-    }
-    function drawHeart(c, x, y, s, color) {
-      var cx = x + s / 2;
-      c.save(); c.strokeStyle = color; c.lineWidth = 1.5; c.lineJoin = 'round';
-      c.beginPath(); c.moveTo(cx, y + s * 0.92); c.bezierCurveTo(cx - s * 0.58, y + s * 0.64, cx - s * 0.58, y + s * 0.02, cx, y + s * 0.28); c.bezierCurveTo(cx + s * 0.58, y + s * 0.02, cx + s * 0.58, y + s * 0.64, cx, y + s * 0.92); c.closePath(); c.stroke();
-      c.restore();
-    }
-
     /* 加载图片，尝试绕过缓存获取 CORS 图片 */
     function loadImageCorsSafe(src) {
       if (!src || /^(data:|blob:)/i.test(src)) return Promise.resolve(src);
@@ -228,7 +202,6 @@ const { siteTitle = '' } = Astro.props;
         var img = new Image();
         img.crossOrigin = 'anonymous';
         var cacheBustUrl = src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_canvas_t=' + Date.now();
-        
         var timer = setTimeout(function () { resolve(null); }, 6000);
         img.onload = function () { clearTimeout(timer); resolve(img); };
         img.onerror = function () { clearTimeout(timer); resolve(null); };
@@ -236,76 +209,76 @@ const { siteTitle = '' } = Astro.props;
       });
     }
 
-    /* ================= 核心绘图逻辑 ================= */
+    /* ================= 核心绘图：完美还原 Snowi 卡片 ================= */
     async function drawCardToCanvas(wrapper, siteTitle, addLog) {
-      var CARD_W = 640;
-      var PAD = 32;
+      var CARD_W = 600;
+      var PAD = 24;
       var CONTENT_W = CARD_W - PAD * 2;
-      var SCALE = 2; // 高分辨率
+      var SCALE = 2; // 2倍图高清导出
 
       var dark = isDark();
-      var colorBg = dark ? '#1e1e1e' : '#ffffff';
-      var colorTitle = dark ? '#f0f0f0' : '#1a1a1a';
-      var colorText = dark ? '#d4d4d4' : '#2f3238';
-      var colorSub = dark ? '#999999' : '#9aa0a8';
+      var colorBg = dark ? '#141518' : '#f4f5f7';       // 画布最外层背景
+      var colorCardBg = dark ? '#1e1f24' : '#ffffff';   // 卡片主体背景
+      var colorTitle = dark ? '#e1e3e8' : '#1a1a1a';    // 标题/日期颜色
+      var colorText = dark ? '#c0c4cc' : '#333639';     // 正文颜色
+      var colorSub = dark ? '#7a808b' : '#9aa0a8';      // 次要文字/图标颜色
 
-      addLog('INFO', '正在提取卡片内容...');
+      addLog('INFO', '正在解析卡片 DOM...');
 
-      // 1. 提取 DOM 数据
+      // 1. 数据提取 (精准对应 HTML 类名)
       var data = {
-        dateNum: '',
-        dateWeek: '',
-        dateTime: '',
-        authorName: '',
-        avatarSrc: '',
-        content: '',
-        images: []
+        dayNum: '', weekday: '', yearMonth: '', time: '',
+        authorName: '', avatarSrc: '',
+        contentText: '', hasAudio: false, images: []
       };
 
-      // 尝试提取日期区块 (基于 Snowi 的 HTML 结构)
-      var dateNumEl = wrapper.querySelector('.date-num, .day, h2, .big-date');
-      if (dateNumEl && dateNumEl.textContent.trim().match(/^\d+$/)) {
-        data.dateNum = dateNumEl.textContent.trim();
-        var dateWeekEl = dateNumEl.nextElementSibling || dateNumEl.parentElement.querySelector('.week, span');
-        if (dateWeekEl) data.dateWeek = dateWeekEl.textContent.trim();
-      }
+      var dayEl = wrapper.querySelector('.day-num');
+      if (dayEl) data.dayNum = dayEl.textContent.trim();
       
-      var timeEl = wrapper.querySelector('.date-time, .post-time, .time');
-      if (timeEl) data.dateTime = timeEl.innerText.replace(/\n/g, ' ').trim();
+      var weekdayEl = wrapper.querySelector('.weekday');
+      if (weekdayEl) data.weekday = weekdayEl.textContent.trim();
 
-      // 提取作者
-      var authorEl = wrapper.querySelector('.author-name, .post-author, .username, .nickname, h3');
+      var ymEl = wrapper.querySelector('.year-month');
+      if (ymEl) data.yearMonth = ymEl.textContent.trim();
+
+      var timeEl = wrapper.querySelector('.time');
+      if (timeEl) data.time = timeEl.textContent.trim();
+
+      var authorEl = wrapper.querySelector('.author-name');
       if (authorEl) data.authorName = authorEl.textContent.trim();
 
-      // 提取图片
-      var allImgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
-      if (allImgs.length > 0) {
-        data.avatarSrc = allImgs[0].getAttribute('src');
-        for (var i = 1; i < allImgs.length; i++) {
-          var src = allImgs[i].getAttribute('src');
-          if (src && !src.startsWith('data:image/svg')) data.images.push(src);
+      var avatarEl = wrapper.querySelector('.author-avatar');
+      if (avatarEl) data.avatarSrc = avatarEl.getAttribute('src');
+
+      var textEl = wrapper.querySelector('.post-text');
+      if (textEl) {
+        // 检查是否包含音乐播放器
+        if (textEl.querySelector('mood-player')) {
+          data.hasAudio = true;
+          // 克隆一份以防污染原 DOM，再剔除播放器获取纯文本
+          var clone = textEl.cloneNode(true);
+          clone.querySelectorAll('mood-player').forEach(function(el) { el.remove(); });
+          data.contentText = clone.innerText.trim();
+        } else {
+          data.contentText = textEl.innerText.trim();
         }
       }
 
-      // 提取正文
-      var contentEl = wrapper.querySelector('.post-content, .post-text, .content, .text, p');
-      if (contentEl) data.content = contentEl.innerText.trim();
-      if (!data.content) {
-        // 退而求其次，取最长的文本块
-        var textNodes = Array.prototype.slice.call(wrapper.querySelectorAll('div, p, span'));
-        var longest = textNodes.map(function(el) { return el.innerText.trim(); }).sort(function(a, b) { return b.length - a.length; })[0];
-        data.content = longest || '';
+      // 获取图片列表
+      var imgEls = wrapper.querySelectorAll('.post-media img, .post-media-grid img');
+      for (var i = 0; i < imgEls.length; i++) {
+        var src = imgEls[i].getAttribute('src');
+        if (src) data.images.push(src);
       }
 
-      // 2. 加载图片 (头像和配图)
-      addLog('INFO', '正在拉取图片资源...');
+      // 2. 加载资源
+      addLog('INFO', '拉取图片和头像资源...');
       var loadedImgs = await Promise.all(data.images.map(function(src) {
         return loadImageCorsSafe(src).then(function(img) {
-          if (!img) addLog('WARN', '图片跨域失败: ' + src.slice(0, 30) + '...');
+          if (!img) addLog('WARN', '图片跨域失败: ' + src.substring(0, 30));
           return img;
         });
       }));
-      loadedImgs = loadedImgs.filter(Boolean); // 剔除失败的
 
       var avatarImg = null;
       if (data.avatarSrc) {
@@ -313,63 +286,61 @@ const { siteTitle = '' } = Astro.props;
         if (!avatarImg) addLog('WARN', '头像跨域失败');
       }
 
-      addLog('INFO', '开始计算布局...');
+      addLog('INFO', '开始计算排版尺寸...');
 
-      // 3. 计算高度
+      // 3. 高度测算
       var measureCtx = document.createElement('canvas').getContext('2d');
       
-      // 头部高度
-      var HEADER_H = 120;
+      // 正文
+      var FONT_SIZE = 16;
+      var LINE_H = 26;
+      measureCtx.font = FONT_SIZE + 'px ' + FONT_STACK;
+      var bodyLines = wrapText(measureCtx, data.contentText, CONTENT_W);
+      var bodyH = bodyLines.length * LINE_H;
       
-      // 正文高度
-      var BODY_SIZE = 20;
-      var LINE_H = 32;
-      measureCtx.font = BODY_SIZE + 'px ' + FONT_STACK;
-      var bodyLines = wrapText(measureCtx, data.content, CONTENT_W);
-      var bodyH = bodyLines.length * LINE_H + 20;
+      // 头部
+      var HEADER_H = 64;
 
-      // 图片网格区域
-      var imgAreaH = 0;
-      var imgRects = [];
-      var gap = 12;
+      // 音乐卡片占位
+      var AUDIO_H = data.hasAudio ? 64 + 16 : 0;
+
+      // 图片网格
+      var gap = 8;
       var numImgs = loadedImgs.length;
+      var imgRects = [];
+      var imgAreaH = 0;
+
       if (numImgs === 1) {
-        var nw = loadedImgs[0].naturalWidth || 1;
-        var nh = loadedImgs[0].naturalHeight || 1;
-        var h = Math.round(CONTENT_W * nh / nw);
-        h = Math.min(h, 800);
-        imgRects.push({ x: PAD, y: 0, w: CONTENT_W, h: h, img: loadedImgs[0] });
-        imgAreaH = h + 20;
-      } else if (numImgs === 2) {
-        var w = (CONTENT_W - gap) / 2;
-        imgRects.push({ x: PAD, y: 0, w: w, h: w, img: loadedImgs[0] });
-        imgRects.push({ x: PAD + w + gap, y: 0, w: w, h: w, img: loadedImgs[1] });
-        imgAreaH = w + 20;
-      } else if (numImgs === 3) {
-        var w = (CONTENT_W - gap * 2) / 3;
-        imgRects.push({ x: PAD, y: 0, w: w, h: w, img: loadedImgs[0] });
-        imgRects.push({ x: PAD + w + gap, y: 0, w: w, h: w, img: loadedImgs[1] });
-        imgRects.push({ x: PAD + w + gap * 2, y: 0, w: w, h: w, img: loadedImgs[2] });
-        imgAreaH = w + 20;
-      } else if (numImgs >= 4) {
-        var cols = 3;
-        var w = (CONTENT_W - gap * (cols - 1)) / cols;
+        var img = loadedImgs[0];
+        var nw = img ? img.naturalWidth : 1;
+        var nh = img ? img.naturalHeight : 1;
+        var h = Math.round(CONTENT_W * (nh / nw));
+        h = Math.min(h, 800); // 限制单图最大高度
+        imgRects.push({ x: 0, y: 0, w: CONTENT_W, h: h, img: img });
+        imgAreaH = h + 16;
+      } else if (numImgs >= 2) {
+        var cols = numImgs === 2 ? 2 : 3;
         var rows = Math.ceil(numImgs / cols);
+        var w = (CONTENT_W - gap * (cols - 1)) / cols;
         for (var i = 0; i < numImgs; i++) {
           var r = Math.floor(i / cols);
           var c = i % cols;
-          imgRects.push({ x: PAD + c * (w + gap), y: r * (w + gap), w: w, h: w, img: loadedImgs[i] });
+          imgRects.push({ x: c * (w + gap), y: r * (w + gap), w: w, h: w, img: loadedImgs[i] });
         }
-        imgAreaH = rows * w + (rows - 1) * gap + 20;
+        imgAreaH = rows * w + (rows - 1) * gap + 16;
       }
 
-      // 底部互动栏
-      var FOOTER_H = 80;
+      // 底部互动 (评论与分享)
+      var FOOTER_H = 36;
 
-      // 水印
-      var WATERMARK_H = 60;
+      // 水印与日志
+      var logStr = addLog.logs.slice(-6).join('\n');
+      measureCtx.font = '11px ui-monospace, monospace';
+      var logLines = wrapText(measureCtx, logStr, CONTENT_W);
+      var logH = logLines.length * 16 + 10;
 
-      var totalH = HEADER_H + bodyH + imgAreaH + FOOTER_H + WATERMARK_H + PAD;
+      // 总高度
+      var totalH = PAD + HEADER_H + bodyH + AUDIO_H + imgAreaH + FOOTER_H + logH + PAD;
 
       // 4. 正式绘制
       var canvas = document.createElement('canvas');
@@ -378,122 +349,187 @@ const { siteTitle = '' } = Astro.props;
       var ctx = canvas.getContext('2d');
       ctx.scale(SCALE, SCALE);
 
-      // 背景
+      // 外层背景
       ctx.fillStyle = colorBg;
       ctx.fillRect(0, 0, CARD_W, totalH);
 
+      // 卡片主体（圆角矩形）
+      ctx.save();
+      roundRectPath(ctx, 0, 0, CARD_W, totalH, 20);
+      ctx.clip();
+      ctx.fillStyle = colorCardBg;
+      ctx.fillRect(0, 0, CARD_W, totalH);
+      
       var currentY = PAD;
 
-      /* --- 头部 --- */
-      // 左侧：大日期 + 星期
-      ctx.textAlign = 'left';
+      /* --- 1. 头部 --- */
       ctx.textBaseline = 'alphabetic';
       
-      var textX = PAD;
-      if (data.dateNum) {
+      // 左侧：日期
+      ctx.textAlign = 'left';
+      if (data.dayNum) {
         ctx.fillStyle = colorTitle;
-        ctx.font = 'bold 28px ' + FONT_STACK;
-        ctx.fillText(data.dateNum, textX, currentY + 24);
-        var numWidth = ctx.measureText(data.dateNum).width;
+        ctx.font = 'bold 26px ' + FONT_STACK;
+        ctx.fillText(data.dayNum, PAD, currentY + 24);
         
-        if (data.dateWeek) {
-          ctx.fillStyle = colorTitle;
-          ctx.font = 'bold 16px ' + FONT_STACK;
-          ctx.fillText(data.dateWeek, textX + numWidth + 8, currentY + 22);
+        var dayW = ctx.measureText(data.dayNum).width;
+        if (data.weekday) {
+          ctx.font = 'bold 14px ' + FONT_STACK;
+          ctx.fillText(data.weekday, PAD + dayW + 6, currentY + 22);
         }
       }
       
-      if (data.dateTime) {
+      if (data.yearMonth || data.time) {
         ctx.fillStyle = colorSub;
-        ctx.font = '14px ' + FONT_STACK;
-        ctx.fillText(data.dateTime, textX, currentY + 50);
+        ctx.font = '12px ' + FONT_STACK;
+        var subStr = data.yearMonth + (data.time ? '  ' + data.time : '');
+        ctx.fillText(subStr, PAD, currentY + 46);
       }
 
-      // 右侧：作者 + 头像
+      // 右侧：作者与头像
       var AVATAR = 44;
+      var ax = CARD_W - PAD - AVATAR;
+      var ay = currentY - 4;
+
       if (avatarImg) {
-        var ax = CARD_W - PAD - AVATAR;
-        var ay = currentY;
         ctx.save();
         ctx.beginPath();
         ctx.arc(ax + AVATAR/2, ay + AVATAR/2, AVATAR/2, 0, Math.PI * 2);
         ctx.clip();
         ctx.drawImage(avatarImg, ax, ay, AVATAR, AVATAR);
         ctx.restore();
+      } else {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(ax + AVATAR/2, ay + AVATAR/2, AVATAR/2, 0, Math.PI * 2);
+        ctx.fillStyle = dark ? '#333' : '#eee';
+        ctx.fill();
+        ctx.restore();
       }
-      
+
       if (data.authorName) {
         ctx.fillStyle = colorSub;
-        ctx.font = '600 16px ' + FONT_STACK;
+        ctx.font = '14px ' + FONT_STACK;
         ctx.textAlign = 'right';
-        ctx.fillText(data.authorName, CARD_W - PAD - AVATAR - 12, currentY + 28);
+        ctx.fillText(data.authorName, ax - 12, ay + AVATAR/2 + 5);
       }
 
       currentY += HEADER_H;
 
-      /* --- 正文 --- */
-      ctx.fillStyle = colorText;
-      ctx.font = BODY_SIZE + 'px ' + FONT_STACK;
+      /* --- 2. 正文 --- */
       ctx.textAlign = 'left';
+      ctx.fillStyle = colorText;
+      ctx.font = FONT_SIZE + 'px ' + FONT_STACK;
       for (var i = 0; i < bodyLines.length; i++) {
         ctx.fillText(bodyLines[i], PAD, currentY + i * LINE_H + 16);
       }
       currentY += bodyH;
 
-      /* --- 图片网格 --- */
-      for (var i = 0; i < imgRects.length; i++) {
-        var r = imgRects[i];
-        var drawY = currentY + r.y;
+      /* --- 3. 音乐播放器占位 --- */
+      if (data.hasAudio) {
+        currentY += 16;
         ctx.save();
-        roundRectPath(ctx, r.x, drawY, r.w, r.h, 12);
-        ctx.clip();
+        roundRectPath(ctx, PAD, currentY, CONTENT_W, 64, 12);
+        ctx.fillStyle = dark ? '#2a2b30' : '#f5f6f8';
+        ctx.fill();
         
-        // 居中裁剪
-        var nw = r.img.naturalWidth, nh = r.img.naturalHeight;
-        var dstRatio = r.w / r.h, srcRatio = nw / nh;
-        var sx = 0, sy = 0, sw = nw, sh = nh;
-        if (srcRatio > dstRatio) { sw = nh * dstRatio; sx = (nw - sw)/2; }
-        else if (srcRatio < dstRatio) { sh = nw / dstRatio; sy = (nh - sh)/2; }
+        // 画个简单的音符图标
+        ctx.fillStyle = colorSub;
+        ctx.font = '24px Arial';
+        ctx.fillText('🎵', PAD + 20, currentY + 40);
         
-        ctx.drawImage(r.img, sx, sy, sw, sh, r.x, drawY, r.w, r.h);
+        ctx.font = '14px ' + FONT_STACK;
+        ctx.fillStyle = colorText;
+        ctx.fillText('分享了音乐', PAD + 60, currentY + 37);
+        
         ctx.restore();
+        currentY += 64;
       }
-      currentY += imgAreaH;
 
-      /* --- 互动栏 (装饰) --- */
-      var iconSize = 20;
-      var itemW = CONTENT_W / 3;
-      ctx.fillStyle = colorSub;
-      ctx.font = '14px ' + FONT_STACK;
-      ctx.textAlign = 'left';
-      
-      var icons = [drawComment, drawHeart, drawRepost];
-      var vals = ['46', '1024', '128'];
-      
-      for (var i = 0; i < 3; i++) {
-        var ix = PAD + i * itemW;
-        icons[i](ctx, ix, currentY, iconSize, colorSub);
-        ctx.fillText(vals[i], ix + iconSize + 8, currentY + 15);
+      /* --- 4. 图片网格 --- */
+      if (imgRects.length > 0) {
+        currentY += 16;
+        for (var i = 0; i < imgRects.length; i++) {
+          var r = imgRects[i];
+          var dx = PAD + r.x;
+          var dy = currentY + r.y;
+          
+          ctx.save();
+          roundRectPath(ctx, dx, dy, r.w, r.h, 8);
+          ctx.clip();
+          
+          if (r.img) {
+            // 居中裁剪绘制 (object-fit: cover)
+            var nw = r.img.naturalWidth, nh = r.img.naturalHeight;
+            var dstRatio = r.w / r.h, srcRatio = nw / nh;
+            var sx = 0, sy = 0, sw = nw, sh = nh;
+            if (srcRatio > dstRatio) { sw = nh * dstRatio; sx = (nw - sw)/2; }
+            else if (srcRatio < dstRatio) { sh = nw / dstRatio; sy = (nh - sh)/2; }
+            ctx.drawImage(r.img, sx, sy, sw, sh, dx, dy, r.w, r.h);
+          } else {
+            // 跨域失败的灰色占位
+            ctx.fillStyle = dark ? '#333' : '#eee';
+            ctx.fillRect(dx, dy, r.w, r.h);
+            ctx.fillStyle = colorSub;
+            ctx.font = '12px ' + FONT_STACK;
+            ctx.textAlign = 'center';
+            ctx.fillText('加载失败', dx + r.w/2, dy + r.h/2);
+          }
+          ctx.restore();
+        }
+        currentY += imgAreaH;
       }
+
+      /* --- 5. 底部互动栏 (完美复刻原页面的 SVG 图标) --- */
+      currentY += 12;
+      var iconSize = 20;
+      
+      // 评论 icon
+      var commentPath = new Path2D("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z");
+      ctx.save();
+      ctx.translate(PAD, currentY);
+      ctx.scale(iconSize/24, iconSize/24);
+      ctx.strokeStyle = colorSub;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke(commentPath);
+      ctx.restore();
+
+      // 分享 icon
+      var sharePath1 = new Path2D("M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8");
+      var sharePath2 = new Path2D("M16 6 12 2 8 6");
+      var sharePath3 = new Path2D("M12 2v13");
+      ctx.save();
+      ctx.translate(PAD + 40, currentY); // 两个图标之间的间距
+      ctx.scale(iconSize/24, iconSize/24);
+      ctx.strokeStyle = colorSub;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke(sharePath1);
+      ctx.stroke(sharePath2);
+      ctx.stroke(sharePath3);
+      ctx.restore();
+
       currentY += FOOTER_H;
 
-      /* --- 底部水印和日志 --- */
+      /* --- 6. 水印和日志 --- */
+      currentY += 10;
       ctx.fillStyle = colorSub;
-      ctx.font = '14px ' + FONT_STACK;
+      ctx.font = '12px ' + FONT_STACK;
       ctx.textAlign = 'left';
-      ctx.fillText('❄️ ' + (siteTitle || 'Snowi'), PAD, currentY);
+      ctx.fillText('❄️ ' + (siteTitle || 'Snowi'), PAD, currentY + 10);
 
-      // 把日志画进去
-      var logStr = addLog.logs.slice(-5).join('\n');
-      if (logStr) {
-        ctx.font = '12px ui-monospace, monospace';
-        ctx.fillStyle = dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)';
-        var logLines = wrapText(ctx, logStr, CONTENT_W);
+      if (logLines.length > 0) {
+        ctx.font = '11px ui-monospace, monospace';
+        ctx.fillStyle = dark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)';
         for (var i = 0; i < logLines.length; i++) {
-           ctx.fillText(logLines[i], PAD, currentY + 22 + i * 16);
+          ctx.fillText(logLines[i], PAD, currentY + 30 + i * 16);
         }
       }
 
+      ctx.restore(); // 恢复卡片主体裁剪
       return canvas;
     }
 
@@ -531,8 +567,7 @@ const { siteTitle = '' } = Astro.props;
         logLines.push(line);
         try { console.log('[snowi] ' + line); } catch (e) {}
       };
-      // 绑定 logs 供绘图函数使用
-      captureLog.logs = logLines;
+      captureLog.logs = logLines; // 供绘图函数使用
 
       btn.disabled = true;
       btn.dataset.snowiBusy = '1';
