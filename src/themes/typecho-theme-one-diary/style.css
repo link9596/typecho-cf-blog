@@ -1,12 +1,4 @@
 /* ==========================================================================
-   Typecho one Diary — Snowi theme
-   本文件汇总了主题各组件的样式（原分散在 *.astro 的 <style is:global> 中）。
-   合并原则：
-     · 共用样式以 components/Index.astro 为准（冲突时使用 Index 的取值）；
-     · 页面专属样式（文章正文、评论、归档、404 等）按区块保留。
-   ========================================================================== */
-
-/* ==========================================================================
    1. 全局与变量
    ========================================================================== */
 
@@ -19,7 +11,6 @@ body {
   background-color: #f2f3f5;
 }
 
-/* clip 不创建滚动容器，避免影响页面内定位 */
 @supports (overflow-x: clip) {
   html,
   body {
@@ -35,8 +26,9 @@ body {
   --icon-color: #888888;
   --btn-hover: rgba(0, 0, 0, 0.05);
   --media-bg: #eeeeee;
+  --placeholder-text: rgba(15, 17, 26, 0.55); 
   --footer-bg: #fafafa;
-  --watermark-color: #999999;
+  --watermark-color: #999999; 
 
   background-color: var(--bg-color);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -57,6 +49,7 @@ html.snowi-dark .snowi-page {
   --icon-color: #aaaaaa;
   --btn-hover: rgba(255, 255, 255, 0.1);
   --media-bg: #333333;
+  --placeholder-text: rgba(212, 218, 245, 0.48);  
   --footer-bg: #1e1e20;
   --watermark-color: #666666;
 }
@@ -237,7 +230,6 @@ html.snowi-dark .snowi-page .nav-item.active {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow: hidden;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
 }
 
@@ -565,7 +557,7 @@ html.snowi-dark .snowi-page .author-name {
 
 .snowi-page .post-text {
   position: relative;
-  z-index: 2;
+  z-index: 3;
   font-size: 14px;
   line-height: 1.75;
   color: var(--text-main);
@@ -1819,7 +1811,7 @@ html.snowi-dark .snowi-page .code-digit {
 }
 
 .snowi-page .site-copyright {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-sub);
   margin: 0;
   text-align: center;
@@ -2147,7 +2139,7 @@ html.snowi-dark .snowi-page .code-digit {
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: rgba(15, 17, 26, 0.55);
+  color: var(--placeholder-text);
   user-select: none;
   opacity: 0;
   filter: blur(8px);
