@@ -132,48 +132,16 @@ const { siteTitle = '' } = Astro.props;
 
     ensureMoodPlayer();
 
-    /* ================= 分享截图（html-to-image） ================= */
+    /* ================= 分享截图（原生 Canvas 方案） ================= */
 
-    var SNAPSHOT_SRC = '/js/screenshot.js';
-    var TRANSPARENT_PIXEL =
-      'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-    var IS_SAFARI =
-      /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
-      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var FONT_STACK = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif';
+    var TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    var IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) || /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    function pad2(n) {
-      return n < 10 ? '0' + n : '' + n;
-    }
-
+    function pad2(n) { return n < 10 ? '0' + n : '' + n; }
     function stamp() {
       var d = new Date();
-      return pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) + '.' +
-        pad2(Math.floor(d.getMilliseconds() / 100));
-    }
-
-    function ensureHtmlToImage() {
-      if (window.htmlToImage && typeof window.htmlToImage.toPng === 'function') {
-        return Promise.resolve(window.htmlToImage);
-      }
-      if (window.__snowiH2I) return window.__snowiH2I;
-      window.__snowiH2I = new Promise(function (resolve, reject) {
-        var script = document.createElement('script');
-        script.src = SNAPSHOT_SRC;
-        script.async = true;
-        script.onload = function () {
-          if (window.htmlToImage && typeof window.htmlToImage.toPng === 'function') {
-            resolve(window.htmlToImage);
-          } else {
-            reject(new Error('html-to-image missing'));
-          }
-        };
-        script.onerror = function () {
-          reject(new Error('script load failed: ' + SNAPSHOT_SRC));
-        };
-        document.head.appendChild(script);
-      });
-      return window.__snowiH2I;
+      return pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) + '.' + pad2(Math.floor(d.getMilliseconds() / 100));
     }
 
     function getPageType() {
@@ -192,208 +160,360 @@ const { siteTitle = '' } = Astro.props;
       return overlay;
     }
 
-    function waitFonts(timeout) {
-      if (!document.fonts || !document.fonts.ready) return Promise.resolve();
-      return Promise.race([
-        document.fonts.ready,
-        new Promise(function (resolve) {
-          setTimeout(resolve, timeout || 2500);
-        }),
-      ]);
+    function roundRectPath(c, x, y, w, h, r) {
+      r = Math.min(r, w / 2, h / 2);
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.arcTo(x + w, y, x + w, y + h, r);
+      c.arcTo(x + w, y + h, x, y + h, r);
+      c.arcTo(x, y + h, x, y, r);
+      c.arcTo(x, y, x + w, y, r);
+      c.closePath();
     }
 
-    /* ---------- 图片预处理：转 Base64 + 时间戳破缓存 + 强制解码 ---------- */
-    async function prepareCardImages(wrapper, addLog) {
-      var imgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
-      var restores = [];
-      var tasks = [];
-      var total = 0;
-      var okCount = 0;
-
-      imgs.forEach(function (img) {
-        var src = img.getAttribute('src') || '';
-        if (!src || /^(data:|blob:)/i.test(src)) return;
-        total++;
-      });
-
-      if (total === 0) {
-        addLog('INFO', '无外部图片，跳过预处理');
-        return function restore() {};
+    function wrapText(c, text, maxWidth) {
+      var lines = [];
+      var chars = Array.from(text || '');
+      var isWordChar = function(ch) { return /[A-Za-z0-9@#$%&*_+\-='"]/.test(ch); };
+      var line = '', i = 0;
+      while (i < chars.length) {
+        var token = chars[i];
+        if (isWordChar(token)) {
+          var j = i + 1;
+          while (j < chars.length && isWordChar(chars[j])) { token += chars[j]; j++; }
+          i = j;
+        } else { i++; }
+        if (line === '') {
+          if (token === ' ') continue;
+          line = token; continue;
+        }
+        if (c.measureText(line + token).width > maxWidth) {
+          lines.push(line);
+          line = token === ' ' ? '' : token;
+        } else { line += token; }
       }
+      if (line !== '') lines.push(line);
+      return lines.length ? lines : [''];
+    }
 
-      addLog('INFO', '图片预处理开始 (共 ' + total + ' 张)');
+    /* 图标绘制函数（复用） */
+    function drawRepost(c, x, y, s, color) {
+      var topY = y + s * 0.32, botY = y + s * 0.68, left = x + s * 0.08, right = x + s * 0.92;
+      c.save(); c.strokeStyle = color; c.fillStyle = color; c.lineWidth = 1.5; c.lineCap = 'round'; c.lineJoin = 'round';
+      c.beginPath(); c.moveTo(left + s * 0.06, topY); c.lineTo(right - s * 0.14, topY); c.stroke();
+      c.beginPath(); c.moveTo(right - s * 0.30, topY - s * 0.16); c.lineTo(right - s * 0.08, topY); c.lineTo(right - s * 0.30, topY + s * 0.16); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(right - s * 0.06, botY); c.lineTo(left + s * 0.14, botY); c.stroke();
+      c.beginPath(); c.moveTo(left + s * 0.30, botY - s * 0.16); c.lineTo(left + s * 0.08, botY); c.lineTo(left + s * 0.30, botY + s * 0.16); c.closePath(); c.fill();
+      c.restore();
+    }
+    function drawComment(c, x, y, s, color) {
+      var bx = x + s * 0.08, by = y + s * 0.10, bw = s * 0.84, bh = s * 0.60, r = s * 0.18;
+      c.save(); c.strokeStyle = color; c.fillStyle = color; c.lineWidth = 1.5; c.lineJoin = 'round';
+      c.beginPath(); c.moveTo(bx + r, by); c.lineTo(bx + bw - r, by); c.quadraticCurveTo(bx + bw, by, bx + bw, by + r); c.lineTo(bx + bw, by + bh - r); c.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh); c.lineTo(bx + bw * 0.42, by + bh); c.lineTo(bx + bw * 0.24, by + bh + s * 0.20); c.lineTo(bx + bw * 0.28, by + bh); c.lineTo(bx + r, by + bh); c.quadraticCurveTo(bx, by + bh, bx, by + bh - r); c.lineTo(bx, by + r); c.quadraticCurveTo(bx, by, bx + r, by); c.closePath(); c.stroke();
+      var cy = by + bh / 2;
+      [0.30, 0.50, 0.70].forEach(function(t) { c.beginPath(); c.arc(bx + bw * t, cy, s * 0.048, 0, Math.PI * 2); c.fill(); });
+      c.restore();
+    }
+    function drawHeart(c, x, y, s, color) {
+      var cx = x + s / 2;
+      c.save(); c.strokeStyle = color; c.lineWidth = 1.5; c.lineJoin = 'round';
+      c.beginPath(); c.moveTo(cx, y + s * 0.92); c.bezierCurveTo(cx - s * 0.58, y + s * 0.64, cx - s * 0.58, y + s * 0.02, cx, y + s * 0.28); c.bezierCurveTo(cx + s * 0.58, y + s * 0.02, cx + s * 0.58, y + s * 0.64, cx, y + s * 0.92); c.closePath(); c.stroke();
+      c.restore();
+    }
 
-      var idx = 0;
-      imgs.forEach(function (img) {
-        var src = img.getAttribute('src') || '';
-        if (!src || /^(data:|blob:)/i.test(src)) return;
-
-        idx++;
-        var myIdx = idx;
-        var startT = performance.now();
-
-        var original = {
-          img: img,
-          src: src,
-          srcset: img.getAttribute('srcset'),
-          sizes: img.getAttribute('sizes'),
-          crossorigin: img.getAttribute('crossorigin'),
-          loading: img.getAttribute('loading'),
-        };
-        restores.push(original);
-
-        img.removeAttribute('loading');
-        img.removeAttribute('srcset');
-        img.removeAttribute('sizes');
-
-        tasks.push(new Promise(function (resolve) {
-          var image = new Image();
-          image.crossOrigin = 'anonymous';
-
-          var cacheBustUrl =
-            src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_t=' + Date.now();
-
-          var timer = setTimeout(function () {
-            addLog('WARN', '图 ' + myIdx + '/' + total + ' 超时 5s');
-            resolve();
-          }, 5000);
-
-          image.onload = function () {
-            clearTimeout(timer);
-            var cost = Math.round(performance.now() - startT);
-            
-            // Safari 关键修复：强制等待图片完全解码
-            var decodePromise = typeof image.decode === 'function' ? image.decode() : Promise.resolve();
-            
-            decodePromise.then(function() {
-              try {
-                var canvas = document.createElement('canvas');
-                canvas.width = image.naturalWidth || image.width || 1;
-                canvas.height = image.naturalHeight || image.height || 1;
-                canvas.getContext('2d').drawImage(image, 0, 0);
-                var dataUrl = canvas.toDataURL('image/png');
-                img.setAttribute('src', dataUrl);
-                okCount++;
-                addLog('OK', '图 ' + myIdx + '/' + total + ' 成功 (' + cost + 'ms, ' + Math.round(dataUrl.length / 1024) + 'KB)');
-              } catch (e) {
-                addLog('ERR', '图 ' + myIdx + '/' + total + ' 转 Base64 失败: ' + (e && e.message ? e.message : e));
-              }
-              resolve();
-            }).catch(function(e) {
-              addLog('WARN', '图 ' + myIdx + '/' + total + ' 解码失败: ' + e);
-              resolve();
-            });
-          };
-
-          image.onerror = function () {
-            clearTimeout(timer);
-            addLog('WARN', '图 ' + myIdx + '/' + total + ' 跨域失败 (' + Math.round(performance.now() - startT) + 'ms)');
-            resolve();
-          };
-
-          image.src = cacheBustUrl;
-        }));
+    /* 加载图片，尝试绕过缓存获取 CORS 图片 */
+    function loadImageCorsSafe(src) {
+      if (!src || /^(data:|blob:)/i.test(src)) return Promise.resolve(src);
+      return new Promise(function (resolve) {
+        var img = new Image();
+        img.crossOrigin = 'anonymous';
+        var cacheBustUrl = src + (src.indexOf('?') > -1 ? '&' : '?') + 'snowi_canvas_t=' + Date.now();
+        
+        var timer = setTimeout(function () { resolve(null); }, 6000);
+        img.onload = function () { clearTimeout(timer); resolve(img); };
+        img.onerror = function () { clearTimeout(timer); resolve(null); };
+        img.src = cacheBustUrl;
       });
+    }
 
-      await Promise.all(tasks);
-      addLog('INFO', '图片预处理完成: ' + okCount + '/' + total + ' 成功');
+    /* ================= 核心绘图逻辑 ================= */
+    async function drawCardToCanvas(wrapper, siteTitle, addLog) {
+      var CARD_W = 640;
+      var PAD = 32;
+      var CONTENT_W = CARD_W - PAD * 2;
+      var SCALE = 2; // 高分辨率
 
-      return function restore() {
-        restores.forEach(function (item) {
-          item.img.setAttribute('src', item.src);
-          if (item.srcset) item.img.setAttribute('srcset', item.srcset);
-          else item.img.removeAttribute('srcset');
-          if (item.sizes) item.img.setAttribute('sizes', item.sizes);
-          else item.img.removeAttribute('sizes');
-          if (item.crossorigin !== null) item.img.setAttribute('crossorigin', item.crossorigin);
-          else item.img.removeAttribute('crossorigin');
-          if (item.loading) item.img.setAttribute('loading', item.loading);
-          else item.img.removeAttribute('loading');
-        });
+      var dark = isDark();
+      var colorBg = dark ? '#1e1e1e' : '#ffffff';
+      var colorTitle = dark ? '#f0f0f0' : '#1a1a1a';
+      var colorText = dark ? '#d4d4d4' : '#2f3238';
+      var colorSub = dark ? '#999999' : '#9aa0a8';
+
+      addLog('INFO', '正在提取卡片内容...');
+
+      // 1. 提取 DOM 数据
+      var data = {
+        dateNum: '',
+        dateWeek: '',
+        dateTime: '',
+        authorName: '',
+        avatarSrc: '',
+        content: '',
+        images: []
       };
-    }
 
-    /* ---------- Safari 专用：toCanvas + 手动覆绘图片兜底 ---------- */
-    async function captureWithOverdraw(wrapper, options, addLog) {
-      addLog('INFO', 'toCanvas 开始 (ratio=' + (options.pixelRatio || 1) + ')');
-      var canvas;
-      try {
-        canvas = await window.htmlToImage.toCanvas(wrapper, options);
-      } catch (e) {
-        addLog('WARN', 'toCanvas 失败，创建空白 Canvas 进行纯覆绘');
-        canvas = document.createElement('canvas');
-        var rect = wrapper.getBoundingClientRect();
-        canvas.width = rect.width * (options.pixelRatio || 1);
-        canvas.height = rect.height * (options.pixelRatio || 1);
+      // 尝试提取日期区块 (基于 Snowi 的 HTML 结构)
+      var dateNumEl = wrapper.querySelector('.date-num, .day, h2, .big-date');
+      if (dateNumEl && dateNumEl.textContent.trim().match(/^\d+$/)) {
+        data.dateNum = dateNumEl.textContent.trim();
+        var dateWeekEl = dateNumEl.nextElementSibling || dateNumEl.parentElement.querySelector('.week, span');
+        if (dateWeekEl) data.dateWeek = dateWeekEl.textContent.trim();
       }
+      
+      var timeEl = wrapper.querySelector('.date-time, .post-time, .time');
+      if (timeEl) data.dateTime = timeEl.innerText.replace(/\n/g, ' ').trim();
 
-      // 检测 Canvas 是否全灰/空白（Safari 下 foreignObject 渲染图片失败的典型表现）
-      var ctx = canvas.getContext('2d');
-      var pixel = ctx.getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data;
-      var isBlank = (pixel[0] > 200 && pixel[1] > 200 && pixel[2] > 200) || (pixel[3] === 0);
+      // 提取作者
+      var authorEl = wrapper.querySelector('.author-name, .post-author, .username, .nickname, h3');
+      if (authorEl) data.authorName = authorEl.textContent.trim();
 
-      if (isBlank) {
-        addLog('WARN', 'Canvas 检测为空白/灰块，执行强制覆绘');
-        ctx.fillStyle = options.backgroundColor || '#f2f3f5';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-
-      var wrapperRect = wrapper.getBoundingClientRect();
-      var scale = options.pixelRatio || 1;
-      var imgs = wrapper.querySelectorAll('img');
-      var drawn = 0;
-
-      for (var i = 0; i < imgs.length; i++) {
-        var img = imgs[i];
-        if (!img.complete || !img.naturalWidth) continue;
-        var rect = img.getBoundingClientRect();
-        if (!rect.width || !rect.height) continue;
-        try {
-          ctx.drawImage(
-            img,
-            (rect.left - wrapperRect.left) * scale,
-            (rect.top - wrapperRect.top) * scale,
-            rect.width * scale,
-            rect.height * scale
-          );
-          drawn++;
-        } catch (e) {
-          addLog('WARN', '覆绘失败: ' + (e && e.message ? e.message : e));
+      // 提取图片
+      var allImgs = Array.prototype.slice.call(wrapper.querySelectorAll('img'));
+      if (allImgs.length > 0) {
+        data.avatarSrc = allImgs[0].getAttribute('src');
+        for (var i = 1; i < allImgs.length; i++) {
+          var src = allImgs[i].getAttribute('src');
+          if (src && !src.startsWith('data:image/svg')) data.images.push(src);
         }
       }
-      addLog('INFO', '覆绘 ' + drawn + '/' + imgs.length + ' 张');
-      var out = canvas.toDataURL('image/png');
-      addLog('OK', 'canvas toDataURL len=' + out.length);
-      return out;
+
+      // 提取正文
+      var contentEl = wrapper.querySelector('.post-content, .post-text, .content, .text, p');
+      if (contentEl) data.content = contentEl.innerText.trim();
+      if (!data.content) {
+        // 退而求其次，取最长的文本块
+        var textNodes = Array.prototype.slice.call(wrapper.querySelectorAll('div, p, span'));
+        var longest = textNodes.map(function(el) { return el.innerText.trim(); }).sort(function(a, b) { return b.length - a.length; })[0];
+        data.content = longest || '';
+      }
+
+      // 2. 加载图片 (头像和配图)
+      addLog('INFO', '正在拉取图片资源...');
+      var loadedImgs = await Promise.all(data.images.map(function(src) {
+        return loadImageCorsSafe(src).then(function(img) {
+          if (!img) addLog('WARN', '图片跨域失败: ' + src.slice(0, 30) + '...');
+          return img;
+        });
+      }));
+      loadedImgs = loadedImgs.filter(Boolean); // 剔除失败的
+
+      var avatarImg = null;
+      if (data.avatarSrc) {
+        avatarImg = await loadImageCorsSafe(data.avatarSrc);
+        if (!avatarImg) addLog('WARN', '头像跨域失败');
+      }
+
+      addLog('INFO', '开始计算布局...');
+
+      // 3. 计算高度
+      var measureCtx = document.createElement('canvas').getContext('2d');
+      
+      // 头部高度
+      var HEADER_H = 120;
+      
+      // 正文高度
+      var BODY_SIZE = 20;
+      var LINE_H = 32;
+      measureCtx.font = BODY_SIZE + 'px ' + FONT_STACK;
+      var bodyLines = wrapText(measureCtx, data.content, CONTENT_W);
+      var bodyH = bodyLines.length * LINE_H + 20;
+
+      // 图片网格区域
+      var imgAreaH = 0;
+      var imgRects = [];
+      var gap = 12;
+      var numImgs = loadedImgs.length;
+      if (numImgs === 1) {
+        var nw = loadedImgs[0].naturalWidth || 1;
+        var nh = loadedImgs[0].naturalHeight || 1;
+        var h = Math.round(CONTENT_W * nh / nw);
+        h = Math.min(h, 800);
+        imgRects.push({ x: PAD, y: 0, w: CONTENT_W, h: h, img: loadedImgs[0] });
+        imgAreaH = h + 20;
+      } else if (numImgs === 2) {
+        var w = (CONTENT_W - gap) / 2;
+        imgRects.push({ x: PAD, y: 0, w: w, h: w, img: loadedImgs[0] });
+        imgRects.push({ x: PAD + w + gap, y: 0, w: w, h: w, img: loadedImgs[1] });
+        imgAreaH = w + 20;
+      } else if (numImgs === 3) {
+        var w = (CONTENT_W - gap * 2) / 3;
+        imgRects.push({ x: PAD, y: 0, w: w, h: w, img: loadedImgs[0] });
+        imgRects.push({ x: PAD + w + gap, y: 0, w: w, h: w, img: loadedImgs[1] });
+        imgRects.push({ x: PAD + w + gap * 2, y: 0, w: w, h: w, img: loadedImgs[2] });
+        imgAreaH = w + 20;
+      } else if (numImgs >= 4) {
+        var cols = 3;
+        var w = (CONTENT_W - gap * (cols - 1)) / cols;
+        var rows = Math.ceil(numImgs / cols);
+        for (var i = 0; i < numImgs; i++) {
+          var r = Math.floor(i / cols);
+          var c = i % cols;
+          imgRects.push({ x: PAD + c * (w + gap), y: r * (w + gap), w: w, h: w, img: loadedImgs[i] });
+        }
+        imgAreaH = rows * w + (rows - 1) * gap + 20;
+      }
+
+      // 底部互动栏
+      var FOOTER_H = 80;
+
+      // 水印
+      var WATERMARK_H = 60;
+
+      var totalH = HEADER_H + bodyH + imgAreaH + FOOTER_H + WATERMARK_H + PAD;
+
+      // 4. 正式绘制
+      var canvas = document.createElement('canvas');
+      canvas.width = CARD_W * SCALE;
+      canvas.height = totalH * SCALE;
+      var ctx = canvas.getContext('2d');
+      ctx.scale(SCALE, SCALE);
+
+      // 背景
+      ctx.fillStyle = colorBg;
+      ctx.fillRect(0, 0, CARD_W, totalH);
+
+      var currentY = PAD;
+
+      /* --- 头部 --- */
+      // 左侧：大日期 + 星期
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      
+      var textX = PAD;
+      if (data.dateNum) {
+        ctx.fillStyle = colorTitle;
+        ctx.font = 'bold 28px ' + FONT_STACK;
+        ctx.fillText(data.dateNum, textX, currentY + 24);
+        var numWidth = ctx.measureText(data.dateNum).width;
+        
+        if (data.dateWeek) {
+          ctx.fillStyle = colorTitle;
+          ctx.font = 'bold 16px ' + FONT_STACK;
+          ctx.fillText(data.dateWeek, textX + numWidth + 8, currentY + 22);
+        }
+      }
+      
+      if (data.dateTime) {
+        ctx.fillStyle = colorSub;
+        ctx.font = '14px ' + FONT_STACK;
+        ctx.fillText(data.dateTime, textX, currentY + 50);
+      }
+
+      // 右侧：作者 + 头像
+      var AVATAR = 44;
+      if (avatarImg) {
+        var ax = CARD_W - PAD - AVATAR;
+        var ay = currentY;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(ax + AVATAR/2, ay + AVATAR/2, AVATAR/2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(avatarImg, ax, ay, AVATAR, AVATAR);
+        ctx.restore();
+      }
+      
+      if (data.authorName) {
+        ctx.fillStyle = colorSub;
+        ctx.font = '600 16px ' + FONT_STACK;
+        ctx.textAlign = 'right';
+        ctx.fillText(data.authorName, CARD_W - PAD - AVATAR - 12, currentY + 28);
+      }
+
+      currentY += HEADER_H;
+
+      /* --- 正文 --- */
+      ctx.fillStyle = colorText;
+      ctx.font = BODY_SIZE + 'px ' + FONT_STACK;
+      ctx.textAlign = 'left';
+      for (var i = 0; i < bodyLines.length; i++) {
+        ctx.fillText(bodyLines[i], PAD, currentY + i * LINE_H + 16);
+      }
+      currentY += bodyH;
+
+      /* --- 图片网格 --- */
+      for (var i = 0; i < imgRects.length; i++) {
+        var r = imgRects[i];
+        var drawY = currentY + r.y;
+        ctx.save();
+        roundRectPath(ctx, r.x, drawY, r.w, r.h, 12);
+        ctx.clip();
+        
+        // 居中裁剪
+        var nw = r.img.naturalWidth, nh = r.img.naturalHeight;
+        var dstRatio = r.w / r.h, srcRatio = nw / nh;
+        var sx = 0, sy = 0, sw = nw, sh = nh;
+        if (srcRatio > dstRatio) { sw = nh * dstRatio; sx = (nw - sw)/2; }
+        else if (srcRatio < dstRatio) { sh = nw / dstRatio; sy = (nh - sh)/2; }
+        
+        ctx.drawImage(r.img, sx, sy, sw, sh, r.x, drawY, r.w, r.h);
+        ctx.restore();
+      }
+      currentY += imgAreaH;
+
+      /* --- 互动栏 (装饰) --- */
+      var iconSize = 20;
+      var itemW = CONTENT_W / 3;
+      ctx.fillStyle = colorSub;
+      ctx.font = '14px ' + FONT_STACK;
+      ctx.textAlign = 'left';
+      
+      var icons = [drawComment, drawHeart, drawRepost];
+      var vals = ['46', '1024', '128'];
+      
+      for (var i = 0; i < 3; i++) {
+        var ix = PAD + i * itemW;
+        icons[i](ctx, ix, currentY, iconSize, colorSub);
+        ctx.fillText(vals[i], ix + iconSize + 8, currentY + 15);
+      }
+      currentY += FOOTER_H;
+
+      /* --- 底部水印和日志 --- */
+      ctx.fillStyle = colorSub;
+      ctx.font = '14px ' + FONT_STACK;
+      ctx.textAlign = 'left';
+      ctx.fillText('❄️ ' + (siteTitle || 'Snowi'), PAD, currentY);
+
+      // 把日志画进去
+      var logStr = addLog.logs.slice(-5).join('\n');
+      if (logStr) {
+        ctx.font = '12px ui-monospace, monospace';
+        ctx.fillStyle = dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)';
+        var logLines = wrapText(ctx, logStr, CONTENT_W);
+        for (var i = 0; i < logLines.length; i++) {
+           ctx.fillText(logLines[i], PAD, currentY + 22 + i * 16);
+        }
+      }
+
+      return canvas;
     }
 
     /* ---------- 下载（Blob） ---------- */
-    async function triggerDownload(dataUrlOrBlob, filename) {
-      var blob;
-      if (typeof Blob !== 'undefined' && dataUrlOrBlob instanceof Blob) {
-        blob = dataUrlOrBlob;
-      } else if (typeof dataUrlOrBlob === 'string' && dataUrlOrBlob.indexOf('data:') === 0) {
-        var parts = dataUrlOrBlob.split(',');
-        var mimeMatch = parts[0].match(/:(.*?);/);
-        var mime = mimeMatch ? mimeMatch[1] : 'image/png';
-        var binary = atob(parts[1]);
-        var array = new Uint8Array(binary.length);
-        for (var i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
-        blob = new Blob([array], { type: mime });
-      } else {
-        blob = dataUrlOrBlob;
-      }
-
-      var link = document.createElement('a');
-      link.download = filename;
-      var blobUrl = URL.createObjectURL(blob);
-      link.href = blobUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(function () {
-        URL.revokeObjectURL(blobUrl);
-      }, 1000);
+    async function triggerDownload(canvas, filename) {
+      return new Promise(function(resolve, reject) {
+        try {
+          canvas.toBlob(function(blob) {
+            if (!blob) { reject(new Error('Canvas 转 Blob 失败(污染)')); return; }
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement('a');
+            link.download = filename;
+            link.href = url;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(function() { URL.revokeObjectURL(url); resolve(); }, 1000);
+          }, 'image/png');
+        } catch(e) { reject(e); }
+      });
     }
 
     /* ---------- 分享主流程 ---------- */
@@ -401,179 +521,39 @@ const { siteTitle = '' } = Astro.props;
       if (btn.disabled || btn.dataset.snowiBusy === '1') return;
 
       var wrapper = btn.closest('.card-wrapper');
-      var pageEl = document.querySelector('.snowi-page');
-      if (!wrapper || !pageEl) return;
+      if (!wrapper) return;
 
       var overlay = showCaptureOverlay();
       var logLines = [];
-      var MAX_LOG_LINES = 20;
-      var logTarget = null;
-      var restoreImages = function () {};
-      var previousPadding = wrapper.style.padding;
-      var previousOverflow = wrapper.style.overflow;
-      var previousVars = {};
-      var cssVars = [
-        '--bg-color', '--card-bg', '--text-main', '--text-sub',
-        '--icon-color', '--btn-hover', '--media-bg', '--footer-bg',
-        '--watermark-color',
-      ];
       var finalError = null;
-
-      function renderLog() {
-        if (!logTarget) return;
-        var body = logLines.length ? logLines.join('\n') : '(日志准备中…)';
-        logTarget.textContent = '❄️ ' + siteTitle + '\n' + body;
-      }
-
-      function addLog(level, msg) {
+      var captureLog = function(level, msg) {
         var line = '[' + stamp() + '] [' + level + '] ' + msg;
         logLines.push(line);
-        if (logLines.length > MAX_LOG_LINES) logLines.shift();
         try { console.log('[snowi] ' + line); } catch (e) {}
-        renderLog();
-      }
+      };
+      // 绑定 logs 供绘图函数使用
+      captureLog.logs = logLines;
 
       btn.disabled = true;
       btn.dataset.snowiBusy = '1';
 
       try {
-        /* 将日志作为水印渲染进截图 */
-        logTarget = document.createElement('div');
-        logTarget.className = 'snowi-watermark snowi-capture-log';
-        logTarget.style.cssText = [
-          'display:block', 'position:static', 'transform:none', 'opacity:1',
-          'visibility:visible', 'float:none', 'margin:16px 0 0', 'padding:10px 12px',
-          'background:rgba(127,127,127,0.10)', 'border-radius:6px',
-          'font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace',
-          'font-size:11px', 'line-height:1.45', 'white-space:pre-wrap',
-          'word-break:break-all', 'text-align:left', 'width:100%',
-          'box-sizing:border-box', 'height:auto', 'max-height:none', 'overflow:visible',
-        ].join(';');
-        wrapper.appendChild(logTarget);
-
-        wrapper.style.overflow = 'visible';
-        wrapper.style.padding = '16px 12px 20px';
-
-        var pageStyle = window.getComputedStyle(pageEl);
-        var currentBg = pageStyle.getPropertyValue('--bg-color').trim() || '#f2f3f5';
-        cssVars.forEach(function (name) {
-          previousVars[name] = wrapper.style.getPropertyValue(name);
-          wrapper.style.setProperty(name, pageStyle.getPropertyValue(name).trim());
-        });
-
-        addLog('INFO', '=== 截图开始 ===');
-        addLog('INFO', '环境: ' + (IS_SAFARI ? 'Safari' : 'Chromium') + ' DPR=' + (window.devicePixelRatio || 1));
-
-        if (!(window.htmlToImage && typeof window.htmlToImage.toPng === 'function')) {
-          addLog('INFO', '加载 ' + SNAPSHOT_SRC);
-          try {
-            await ensureHtmlToImage();
-            addLog('OK', 'htmlToImage 加载完成');
-          } catch (e) {
-            addLog('ERR', 'htmlToImage 加载失败: ' + (e && e.message ? e.message : e));
-            alert('截图组件加载失败（/js/screenshot.js）');
-            return;
-          }
-        } else {
-          addLog('OK', 'htmlToImage 已就绪');
-        }
-
+        captureLog('INFO', '开始提取原生 Canvas...');
+        var canvas = await drawCardToCanvas(wrapper, siteTitle, captureLog);
+        
         var type = getPageType();
-        var highResScale = IS_SAFARI
-          ? Math.min(window.devicePixelRatio || 1, 1.5)
-          : (window.devicePixelRatio || 1) * 1.2;
-        addLog('INFO', '页面=' + type + ' ratio=' + highResScale);
-
-        addLog('INFO', '等待字体...');
-        var ft = performance.now();
-        await waitFonts(2500);
-        addLog('OK', '字体就绪 (' + Math.round(performance.now() - ft) + 'ms)');
-
-        var it = performance.now();
-        restoreImages = await prepareCardImages(wrapper, addLog);
-        addLog('OK', '图片预处理结束 (' + Math.round(performance.now() - it) + 'ms)');
-
-        var captureOptions = {
-          backgroundColor: currentBg,
-          pixelRatio: highResScale,
-          cacheBust: false,
-          skipFonts: true,
-          imagePlaceholder: TRANSPARENT_PIXEL,
-          filter: function (node) {
-            var tag = node && node.tagName;
-            return tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' && tag !== 'IFRAME' &&
-              tag !== 'OBJECT' && tag !== 'EMBED' && tag !== 'CANVAS' && tag !== 'AUDIO';
-          },
-        };
-
-        var dataUrl;
-        var t0 = performance.now();
-
-        if (IS_SAFARI) {
-          addLog('INFO', 'Safari 预热 (ratio=0.1)...');
-          try {
-            await window.htmlToImage.toPng(wrapper, { pixelRatio: 0.1, skipFonts: true, cacheBust: false });
-            await window.htmlToImage.toPng(wrapper, { pixelRatio: 0.1, skipFonts: true, cacheBust: false });
-            addLog('OK', '预热完成');
-          } catch (e) {
-            addLog('WARN', '预热失败: ' + (e && e.message ? e.message : e));
-          }
-
-          // Safari 下我们不太信任 toPng 的结果，直接强行覆绘
-          addLog('INFO', 'Safari 环境，跳过 toPng，直接使用覆绘兜底');
-          try {
-            dataUrl = await captureWithOverdraw(wrapper, captureOptions, addLog);
-          } catch (e) {
-            addLog('ERR', '覆绘失败，尝试最后一次 toPng: ' + (e && e.message ? e.message : e));
-            dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
-          }
-        } else {
-          addLog('INFO', 'toPng 开始...');
-          try {
-            dataUrl = await window.htmlToImage.toPng(wrapper, captureOptions);
-            addLog('OK', 'toPng 成功 (' + Math.round(performance.now() - t0) + 'ms, len=' + (dataUrl ? dataUrl.length : 0) + ')');
-          } catch (firstErr) {
-            addLog('ERR', 'toPng 失败: ' + (firstErr && firstErr.message ? firstErr.message : firstErr));
-            addLog('INFO', '回退 toPng (ratio=1)...');
-            var t1 = performance.now();
-            dataUrl = await window.htmlToImage.toPng(wrapper, {
-              backgroundColor: currentBg, pixelRatio: 1, cacheBust: false, skipFonts: true, imagePlaceholder: TRANSPARENT_PIXEL,
-              filter: function (node) {
-                var tag = node.tagName;
-                var isHeavy = node.nodeType === 1 && node.classList && (node.classList.contains('live-photo-badge') || node.classList.contains('player-placeholder'));
-                return !isHeavy && tag !== 'MOOD-PLAYER' && tag !== 'VIDEO' && tag !== 'IFRAME' && tag !== 'OBJECT' && tag !== 'EMBED' && tag !== 'CANVAS' && tag !== 'AUDIO';
-              },
-            });
-            addLog('OK', '回退成功 (' + Math.round(performance.now() - t1) + 'ms, len=' + (dataUrl ? dataUrl.length : 0) + ')');
-          }
-        }
-
-        if (!dataUrl || dataUrl.indexOf('data:image') !== 0) {
-          throw new Error('empty capture');
-        }
-
         var prefix = type === 'index' ? 'Snowi-' : 'Snowi-' + type.charAt(0).toUpperCase() + type.slice(1) + '-';
         var filename = prefix + Date.now() + '.png';
-        addLog('INFO', '下载: ' + filename);
-        await triggerDownload(dataUrl, filename);
-        addLog('OK', '下载已触发');
+        
+        captureLog('INFO', '导出图片...');
+        await triggerDownload(canvas, filename);
+        captureLog('OK', '下载已触发');
       } catch (err) {
         finalError = err;
         var msg = err && err.message ? err.message : String(err);
-        addLog('ERR', '流程异常: ' + msg);
-        if (err && err.stack) {
-          addLog('ERR', 'stack: ' + String(err.stack).split('\n').slice(0, 2).join(' | '));
-        }
+        captureLog('ERR', '异常: ' + msg);
       } finally {
-        restoreImages();
-        if (logTarget && logTarget.parentNode) logTarget.parentNode.removeChild(logTarget);
         overlay.remove();
-        wrapper.style.padding = previousPadding;
-        wrapper.style.overflow = previousOverflow;
-        cssVars.forEach(function (name) {
-          if (previousVars[name]) wrapper.style.setProperty(name, previousVars[name]);
-          else wrapper.style.removeProperty(name);
-        });
         btn.disabled = false;
         delete btn.dataset.snowiBusy;
 
