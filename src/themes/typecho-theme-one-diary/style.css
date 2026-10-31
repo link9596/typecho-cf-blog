@@ -130,7 +130,6 @@ html.snowi-dark body {
   color: var(--text-sub);
   padding: 8px 18px;
   border: none;
-  border-radius: 20px;
   background-color: transparent;
   cursor: pointer;
   transition: all 0.2s ease;
