@@ -110,6 +110,7 @@ html.snowi-dark body {
 }
 
 .snowi-page .site-subtitle {
+  font-family: 'Noto Serif SC', var(--font-sans); 
   font-size: 13px;
   color: var(--text-sub);
   font-style: italic;
@@ -2254,7 +2255,7 @@ html.is-swup-loading .snowi-page mood-player {
   }
 
   .snowi-page .site-title {
-    font-size: 23px;
+    font-size: 32px;
   }
 
   .snowi-page .archive-title {
