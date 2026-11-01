@@ -100,11 +100,11 @@ html.snowi-dark body {
 }
 
 .snowi-page .header-brand {
-  margin-bottom: 24px;
+  margin: 10px 0px 24px 2px;
 }
 
 .snowi-page .site-title {
-  font-size: 32px;
+  font-size: 25px;
   letter-spacing: 1px;
   color: var(--text-main);
   margin: 0 0 8px;
@@ -2253,7 +2253,7 @@ html.is-swup-loading .snowi-page mood-player {
   }
 
   .snowi-page .site-title {
-    font-size: 28px;
+    font-size: 23px;
   }
 
   .snowi-page .archive-title {
