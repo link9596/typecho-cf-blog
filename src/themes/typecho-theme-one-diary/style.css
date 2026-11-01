@@ -114,7 +114,6 @@ html.snowi-dark body {
 
 .snowi-page .site-title {
   font-size: 25px;
-  font-weight: var(--font-l500d400); 
   letter-spacing: 1px;
   color: var(--text-main);
   margin: 0 0 8px;
