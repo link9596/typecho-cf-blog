@@ -23,7 +23,8 @@ export function defaultCspDirectives(): CspDirectives {
   return {
     'default-src': ["'self'"],
     'img-src': ["'self'", 'data:', 'https://www.gravatar.com', 'https:', 'https://*.atlinker.cn', 'https://*.lkin.cn'],
-    'style-src': ["'self'", "'unsafe-inline'"],
+    'style-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+    'font-src':  ["'self'", 'https://cdn.jsdelivr.net'],
     'script-src': ["'self'", "'unsafe-inline'", 'https://r2-file.lkin.cn'],
     'connect-src': [
       "'self'",
