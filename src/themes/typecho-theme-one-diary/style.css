@@ -284,7 +284,7 @@ html.snowi-dark .snowi-page .nav-item.active {
 
 .snowi-page .year-month,
 .snowi-page .time {
-  font-family: var(--font-sans); 
+  font-family: Georgia, var(--font-sans); 
   font-size: 11px;
   color: var(--text-sub);
   font-weight: 500;
