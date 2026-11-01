@@ -578,7 +578,7 @@ html.snowi-dark .snowi-page .author-name {
   line-height: 1.75;
   color: var(--text-main);
   word-wrap: break-word;
-  font-weight: var(--font-l600d500); 
+  font-family: var(--font-sans);
 }
 
 .snowi-page .post-text p {
