@@ -6,6 +6,7 @@ import Base from '@/layouts/Base.astro';
 import type { ThemeIndexProps } from '@/lib/theme-props';
 import { buildAuthorLink, getDateParts } from '@/lib/content';
 import GlobalPlayer from './GlobalPlayer.astro';
+import Header from './Header.astro';
 import ThemeScripts from './ThemeScripts.astro';
 import VisibilityTag from './VisibilityTag.astro';
 
@@ -16,11 +17,7 @@ const {
   posts, pagination, sidebarData,
 } = Astro.props;
 
-const isIndex = currentPath === '/';
 
-const normalizePath = (p: string) => (p || '').replace(/\/+$/, '') || '/';
-const isPageActive = (slug: string) =>
-  normalizePath(currentPath) === normalizePath(`/${slug}`);
 
 const recentPosts = sidebarData?.recentPosts ?? [];
 const recentComments = sidebarData?.recentComments ?? [];
@@ -83,25 +80,7 @@ function buildGridLivePhoto(src: string, videoSrc?: string): string {
 <Base options={options} urls={urls} user={user} isLoggedIn={isLoggedIn} pluginCtx={pluginCtx}>
   <div class="snowi-page">
 
-    <header class="site-header" id="header">
-      <div class="header-brand">
-        <h1 class="site-title">{options.title}</h1>
-        {options.description && <p class="site-subtitle">{options.description}</p>}
-      </div>
-      <nav class="header-nav">
-        <a href={urls.siteUrl + '/'} class:list={['nav-item', { active: isIndex }]}>首页</a>
-        {pages.map((page) => (
-          <a href={page.permalink} class:list={['nav-item', { active: isPageActive(page.slug) }]}>{page.title}</a>
-        ))}
-        <button type="button" class="nav-item" id="snowiSearchToggle">搜索</button>
-      </nav>
-
-      <form class="header-search" id="snowiSearch" method="post" action={urls.siteUrl + '/'} role="search">
-        <label for="s" class="sr-only">搜索关键字</label>
-        <input type="text" id="s" name="s" class="text" placeholder="输入关键字搜索" autocomplete="off" />
-        <button type="submit" class="search-submit">搜索</button>
-      </form>
-    </header>
+    <Header options={options} urls={urls} pages={pages} currentPath={currentPath} />
 
     <div class="page-layout">
       <main class="post-container" id="main" role="main">
