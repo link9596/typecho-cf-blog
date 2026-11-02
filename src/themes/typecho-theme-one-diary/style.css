@@ -2301,3 +2301,139 @@ html.is-swup-loading .snowi-page mood-player {
     width: 100%;
   }
 }
+
+/* ------ OwO评论内容里的表情图片 ------ */
+.owo-emotion {
+  height: 1.4em;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 2px;
+  border-radius: 4px;
+  margin-top: -3px;
+}
+.owo-emotion.owo-emotion-large {
+  height: 3.5em;
+  max-width: 250px;
+  margin: 4px 6px;
+  vertical-align: bottom;
+  margin-top: 0;
+  border-radius: 8px;
+}
+
+/* ---------- 面板容器 ---------- */
+.OwO { position: relative; display: inline-block; z-index: 100; }
+
+.OwO .OwO-logo {
+  cursor: pointer; display: inline-flex; align-items: center; padding: 8px 14px;
+  font-size: 14px; color: var(--text-sub); background: var(--input-bg);
+  border-radius: 12px; user-select: none; font-weight: 500; border: none;
+  transition: background 0.2s, color 0.2s;
+}
+.OwO .OwO-logo:hover { color: var(--text-main); background: #eceef1; }
+
+/* 下拉面板 */
+.OwO .OwO-body {
+  position: absolute; left: 0; width: 380px; max-width: 85vw;
+  background: var(--card-bg); border: none; border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12); overflow: hidden; box-sizing: border-box;
+  visibility: hidden; opacity: 0; transform: translateY(-10px) scale(0.98);
+  transform-origin: top left; pointer-events: none;
+  transition: opacity 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+              transform 0.28s cubic-bezier(0.32, 0.72, 0, 1),
+              visibility 0.28s ease;
+}
+.OwO.OwO-down .OwO-body { top: calc(100% + 10px); bottom: auto; }
+.OwO.OwO-open .OwO-body {
+  visibility: visible; opacity: 1; transform: translateY(0) scale(1); pointer-events: auto;
+}
+
+/* 高度过渡舞台 */
+.OwO .OwO-items-wrap { overflow: hidden; }
+
+/* 表情列表 */
+.OwO .OwO-items {
+  display: none; margin: 0; padding: 16px; list-style: none; overflow-y: auto;
+  box-sizing: border-box; background: var(--card-bg);
+}
+.OwO .OwO-items-show { display: block; }
+
+.OwO .OwO-item {
+  display: inline-block; padding: 6px 8px; font-size: 15px; line-height: 1.4;
+  border-radius: 8px; cursor: pointer; vertical-align: middle;
+  transition: background 0.15s; white-space: nowrap;
+}
+.OwO .OwO-item:hover { background: var(--input-bg); }
+
+/* 图片表情面板 */
+.OwO .OwO-items-image {
+  display: none; flex-wrap: wrap; gap: 6px;
+  align-items: center; justify-content: flex-start;
+}
+.OwO .OwO-items-image.OwO-items-show { display: flex; }
+
+.OwO .OwO-items-image .OwO-item {
+  padding: 4px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+}
+.OwO .OwO-items-image .OwO-item img {
+  height: 28px; width: auto; max-width: 100px;
+  object-fit: contain; border-radius: 6px; display: block;
+}
+.OwO .OwO-items-image.other .OwO-item img {
+  height: 64px; max-width: 160px;
+}
+
+/* ---------- 掉落 / 入场动画 ----------
+   注意：JS 的 animationend 监听依赖 'owoDropOut' 动画名，改名需同步。
+   --drop-x / --drop-rotate 由 JS 逐项注入。          */
+@keyframes owoDropOut {
+  0%   { transform: translate(0, 0) rotate(0); }
+  20%  { transform: translate(calc(var(--drop-x) * 0.35), -6px) rotate(calc(var(--drop-rotate) * 0.15)); }
+  100% { transform: translate(var(--drop-x), 140px) rotate(var(--drop-rotate)); }
+}
+@keyframes owoFadeOut {
+  0%   { opacity: 1; }
+  60%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes owoDropIn {
+  0%   { transform: translate(var(--drop-x), -80px) scale(0.9) rotate(var(--drop-rotate)); }
+  100% { transform: translate(0, 0) scale(1) rotate(0); }
+}
+@keyframes owoFadeIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.owo-anim-out {
+  animation:
+    owoDropOut 0.34s cubic-bezier(0.4, 0, 1, 1) forwards,
+    owoFadeOut 0.34s ease-in forwards;
+  pointer-events: none;
+}
+.owo-anim-in {
+  animation:
+    owoDropIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    owoFadeIn 0.22s ease-out both;
+}
+
+/* ---------- 底部 Tab 栏 ---------- */
+.OwO .OwO-bar { background: #f4f5f7; border: none; padding: 4px 8px; }
+.OwO .OwO-packages {
+  display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; gap: 2px;
+}
+.OwO .OwO-packages li {
+  padding: 4px 10px; font-size: 13px; color: var(--text-sub); cursor: pointer;
+  transition: all 0.2s; user-select: none;
+  display: flex; align-items: center; justify-content: center; border-radius: 6px;
+}
+.OwO .OwO-packages li:hover { color: var(--text-main); }
+.OwO .OwO-packages li img { height: 20px; width: auto; object-fit: contain; }
+.OwO .OwO-packages li.OwO-package-active {
+  color: var(--accent-color); font-weight: 700; background: var(--card-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
