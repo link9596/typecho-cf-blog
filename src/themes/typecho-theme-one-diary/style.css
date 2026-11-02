@@ -2454,4 +2454,9 @@ html.snowi-dark .OwO .OwO-bar { background: #1e1e20; }
   bottom: calc(100% + 10px);
   top: auto;
   transform-origin: bottom left;
+  transform: translateY(10px) scale(0.98);
+}
+
+.OwO.OwO-up.OwO-open .OwO-body {
+  transform: translateY(0) scale(1);
 }
