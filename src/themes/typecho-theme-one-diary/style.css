@@ -2157,7 +2157,6 @@ html.snowi-dark .snowi-page .code-digit {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--placeholder-text);
 }
 
 /* Swup 切页期间先藏住内容区播放器，等 GlobalPlayer 去重为占位后再显示 */
