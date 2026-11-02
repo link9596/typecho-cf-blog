@@ -1,0 +1,202 @@
+---
+interface Props {
+  target?: string; // textarea 选择器
+  renderSelector?: string | false;  // 评论正文选择器；false 关闭渲染器
+  logo?: string;
+  width?: string;
+  cdnBase?: string;
+  packages?: Record<string, any>;
+  items?: {  // 覆盖默认表情列表
+    tieba?: string[];
+    alus?: string[];
+    big?: string[];
+  };
+  api?: Record<string, any>;// 自定义面板数据
+}
+
+const {
+  target = '#textarea',
+  renderSelector = '.comment-text',
+  logo = 'OωO',
+  width = '360px',
+  cdnBase = 'https://emoji.lkin.cn/emojis/',
+  packages = null,
+  items = null,
+  api = null,
+} = Astro.props;
+
+/* 每个组件实例唯一标识 */
+const uid = 'owo-' + Math.random().toString(36).slice(2, 8);
+
+/* ---------- 包配置（每个包独立 marker） ---------- */
+const defaultPackages = {
+  tieba: { dir: 'tieba', prefix: 'tieba_', ext: 'png', marker: '@' },
+  alus:  { dir: 'alus',  prefix: 'alus_',  ext: 'png', marker: '#' },
+  big:   { dir: 'alus',  prefix: 'alus_',  ext: 'png', marker: '&' },
+};
+const finalPackages = packages
+  ? Object.fromEntries(
+      Object.entries(defaultPackages).map(([k, v]) => [
+        k, { ...v, ...(packages[k] || {}) },
+      ]).concat(
+        Object.keys(packages)
+          .filter((k) => !defaultPackages[k])
+          .map((k) => [k, packages[k]])
+      )
+    )
+  : defaultPackages;
+
+/* ---------- 默认表情列表（组件内可被 items 覆盖） ---------- */
+const defaultItems = {
+  tieba: ['laugh','joy','antic','vomit_water','sob','wink','cry','dizzy_face','heart_eyes','huge_sweat','rage','satisfied','sleep','smirk','sunglasses','sweat','vomit','lovely','angry','annoyed','awkward','cute','pick_nose','shy','yum','grievance','chuckle','crazy','hurt','look_down','rolling_eyes','agree','sorry','surprised','wow','doubt','thumbsup','v','metal','ok','heart','red_scarf','sofa','moon','pill','rainbow','rose','shit','banana','toilet_paper','cake','gift','candle','coffee'],
+  alus:  ['happy','satisfied','unhappy','rage','shy','blush','kiss','clap','embarrassed','expect','die','helpless','wise','observe','ponder','silent','stare','surrender','sweat','think','vomit','wait','shit','smoke','grass','rich','dark','bystand','expressionless','grin','hide','persevere','unamused','slap','gunshot','wound','injured','knockdown','candle','flower','cucumber','high_five','huge_sweat','observe_dark','small_eye','smirk','astonished','sunglasses','sweat_smile','sob','fu','thumbsup','yum','hocho','greddy','pick_nose','awkward','vomit_blood','vomit_water','whatever'],
+  big:   ['cucumber','huge_sweat','vomit_blood'],
+};
+const finalItems = {
+  tieba: items?.tieba || defaultItems.tieba,
+  alus:  items?.alus  || defaultItems.alus,
+  big:   items?.big   || defaultItems.big,
+};
+
+/* ---------- 传给客户端脚本的配置 ---------- */
+const config = {
+  uid,
+  target,
+  renderSelector,
+  logo,
+  width,
+  emojiOption: {
+    baseUrl: cdnBase,
+    packages: finalPackages,
+    bigPrefix: 'big_',
+    fallbackPackage: 'alus',
+  },
+  defaultItems: finalItems,
+  customApi: api,
+};
+---
+
+<script is:inline src="/js/owo.js"></script>
+
+<div class="OwO" data-owo-uid={uid}></div>
+
+<script is:inline define:vars={{ config }}>
+  (function () {
+    'use strict';
+
+    /* 防重 */
+    if (!window.__owoBooted__) window.__owoBooted__ = {};
+    if (window.__owoBooted__[config.uid]) return;
+    window.__owoBooted__[config.uid] = true;
+
+    /* 生成默认面板数据 */
+    function buildDefaultApi() {
+      var gen = function (pkgName, list, prefix) {
+        prefix = prefix || '';
+        return list.map(function (name) {
+          return {
+            icon: '<img src="' + window.OwOEmotion.buildUrl(pkgName, name, config.emojiOption) + '">',
+            text: prefix ? prefix + name : name,
+            title: name,
+          };
+        });
+      };
+
+      return {
+        '颜文字': {
+          type: 'emoticon',
+          icon: "<span style='font-size:14px;'>颜</span>",
+          container: [
+            { icon: '(≧▽≦)', text: '开心', title: '开心' },
+            { icon: '→_→', text: '斜眼', title: '斜眼' },
+          ],
+        },
+        'Emoji': {
+          type: 'emoji',
+          icon: "<span style='font-size:16px;'>😀</span>",
+          container: [
+            { icon: '😂', text: '笑哭', title: '笑哭' },
+            { icon: '😀', text: '开心', title: '开心' },
+          ],
+        },
+        '贴吧': {
+          type: 'image',
+          marker: config.emojiOption.packages.tieba.marker,
+          container: gen('tieba', config.defaultItems.tieba),
+        },
+        '阿鲁': {
+          type: 'image',
+          marker: config.emojiOption.packages.alus.marker,
+          container: gen('alus', config.defaultItems.alus),
+        },
+        '其他表情': {
+          type: 'image',
+          marker: config.emojiOption.packages.big.marker,
+          className: 'other',
+          container: gen('big', config.defaultItems.big, 'big_'),
+        },
+      };
+    }
+
+    function boot() {
+      /* 等库就绪 */
+      if (!window.OwO || !window.OwOEmotion) {
+        return setTimeout(boot, 30);
+      }
+
+      var mount = document.querySelector('.OwO[data-owo-uid="' + config.uid + '"]');
+      if (!mount) return; // 当前页无此组件（Swup 已切走）
+
+      var area = document.querySelector(config.target);
+      if (!area) return; // textarea 不在
+
+      /* 重建面板 */
+      mount.innerHTML = '';
+      new window.OwO({
+        logo: config.logo,
+        container: mount,
+        target: area,
+        position: 'down',
+        width: config.width,
+        api: config.customApi || buildDefaultApi(),
+      });
+
+      /* 渲染器（全局单例） */
+      if (config.renderSelector) {
+        if (!window.__owoRenderer__) {
+          window.__owoRenderer__ = new window.OwOEmotion(
+            Object.assign({}, config.emojiOption, { autoInit: false })
+          );
+        }
+        document.querySelectorAll(config.renderSelector).forEach(function (el) {
+          window.__owoRenderer__.parse(el);
+        });
+      }
+    }
+
+    /* 首次 */
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', boot);
+    } else {
+      boot();
+    }
+
+    /* Swup 切页后重建 */
+    document.addEventListener('swup:page:view', boot);
+    document.addEventListener('swup:content:replace', boot);
+
+    /* 对外 API：AJAX 提交后可手动补扫 */
+    window.SnowiOwO = window.SnowiOwO || {
+      reparse: function () {
+        if (window.__owoRenderer__ && config.renderSelector) {
+          document.querySelectorAll(config.renderSelector).forEach(function (el) {
+            window.__owoRenderer__.parse(el);
+          });
+        }
+      },
+      renderer: function () {
+        return window.__owoRenderer__;
+      },
+    };
+  })();
+</script>
