@@ -20,19 +20,39 @@ body {
   }
 }
 
-.snowi-page {
+:root {
   --bg-color: #f2f3f5;
   --card-bg: #ffffff;
+  --input-bg: #f6f7f9;
   --text-main: #444444;
   --text-sub: #888888;
   --icon-color: #888888;
   --btn-hover: rgba(0, 0, 0, 0.05);
   --media-bg: #eeeeee;
-  --placeholder-text: rgba(15, 17, 26, 0.55); 
+  --placeholder-text: rgba(15, 17, 26, 0.55);
   --footer-bg: #fafafa;
-  --watermark-color: #999999; 
-  --font-sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --watermark-color: #999999;
+  --accent-color: #444444;
 
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+html.snowi-dark {
+  --bg-color: #121212;
+  --card-bg: #242426;
+  --input-bg: #2c2c2e;
+  --text-main: #dcdcdc;
+  --text-sub: #aaaaaa;
+  --icon-color: #aaaaaa;
+  --btn-hover: rgba(255, 255, 255, 0.1);
+  --media-bg: #333333;
+  --placeholder-text: rgba(212, 218, 245, 0.48);
+  --footer-bg: #1e1e20;
+  --watermark-color: #666666;
+  --accent-color: #dcdcdc;
+}
+
+.snowi-page {
   background-color: var(--bg-color);
   font-family: var(--font-sans);
   display: flex;
@@ -42,23 +62,6 @@ body {
   color: var(--text-main);
   min-height: 100vh;
   box-sizing: border-box;
-}
-
-html.snowi-dark .snowi-page {
-  --bg-color: #121212;
-  --card-bg: #242426;
-  --text-main: #dcdcdc;
-  --text-sub: #aaaaaa;
-  --icon-color: #aaaaaa;
-  --btn-hover: rgba(255, 255, 255, 0.1);
-  --media-bg: #333333;
-  --placeholder-text: rgba(212, 218, 245, 0.48);  
-  --footer-bg: #1e1e20;
-  --watermark-color: #666666;
-}
-
-html.snowi-dark body {
-  background-color: #121212;
 }
 
 .snowi-page,
