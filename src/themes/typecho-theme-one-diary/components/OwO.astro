@@ -1,17 +1,17 @@
 ---
 interface Props {
-  target?: string; // textarea 选择器
-  renderSelector?: string | false;  // 评论正文选择器；false 关闭渲染器
+  target?: string;
+  renderSelector?: string | false;
   logo?: string;
   width?: string;
   cdnBase?: string;
   packages?: Record<string, any>;
-  items?: {  // 覆盖默认表情列表
+  items?: {
     tieba?: string[];
     alus?: string[];
     big?: string[];
   };
-  api?: Record<string, any>;// 自定义面板数据
+  api?: Record<string, any>;
 }
 
 const {
@@ -28,7 +28,7 @@ const {
 /* 每个组件实例唯一标识 */
 const uid = 'owo-' + Math.random().toString(36).slice(2, 8);
 
-/* ---------- 包配置（每个包独立 marker） ---------- */
+/* ---------- 包配置 ---------- */
 const defaultPackages = {
   tieba: { dir: 'tieba', prefix: 'tieba_', ext: 'png', marker: '@' },
   alus:  { dir: 'alus',  prefix: 'alus_',  ext: 'png', marker: '#' },
@@ -46,7 +46,7 @@ const finalPackages = packages
     )
   : defaultPackages;
 
-/* ---------- 默认表情列表（组件内可被 items 覆盖） ---------- */
+/* ---------- 默认表情列表 ---------- */
 const defaultItems = {
   tieba: ['laugh','joy','antic','vomit_water','sob','wink','cry','dizzy_face','heart_eyes','huge_sweat','rage','satisfied','sleep','smirk','sunglasses','sweat','vomit','lovely','angry','annoyed','awkward','cute','pick_nose','shy','yum','grievance','chuckle','crazy','hurt','look_down','rolling_eyes','agree','sorry','surprised','wow','doubt','thumbsup','v','metal','ok','heart','red_scarf','sofa','moon','pill','rainbow','rose','shit','banana','toilet_paper','cake','gift','candle','coffee'],
   alus:  ['happy','satisfied','unhappy','rage','shy','blush','kiss','clap','embarrassed','expect','die','helpless','wise','observe','ponder','silent','stare','surrender','sweat','think','vomit','wait','shit','smoke','grass','rich','dark','bystand','expressionless','grin','hide','persevere','unamused','slap','gunshot','wound','injured','knockdown','candle','flower','cucumber','high_five','huge_sweat','observe_dark','small_eye','smirk','astonished','sunglasses','sweat_smile','sob','fu','thumbsup','yum','hocho','greddy','pick_nose','awkward','vomit_blood','vomit_water','whatever'],
@@ -76,20 +76,16 @@ const config = {
 };
 ---
 
-<script is:inline src="/js/owo.js"></script>
+<!-- 加 data-astro-rerun：切页后重新执行，确保 window.OwO 一定就绪 -->
+<script is:inline src="/js/owo.js" data-astro-rerun></script>
 
 <div class="OwO" data-owo-uid={uid}></div>
 
-<script is:inline define:vars={{ config }}>
+<!-- 加 data-astro-rerun：切页后重新执行，重建面板 -->
+<script is:inline define:vars={{ config }} data-astro-rerun>
   (function () {
     'use strict';
 
-    /* 防重 */
-    if (!window.__owoBooted__) window.__owoBooted__ = {};
-    if (window.__owoBooted__[config.uid]) return;
-    window.__owoBooted__[config.uid] = true;
-
-    /* 生成默认面板数据 */
     function buildDefaultApi() {
       var gen = function (pkgName, list, prefix) {
         prefix = prefix || '';
@@ -139,18 +135,21 @@ const config = {
     }
 
     function boot() {
-      /* 等库就绪 */
+      var mount = document.querySelector('.OwO[data-owo-uid="' + config.uid + '"]');
+      if (!mount) return;                    // 本页没有该组件
+      if (mount.dataset.owoReady === '1') return; // 同一 DOM 不重复初始化
+
+      // 库还没就绪时轮询
       if (!window.OwO || !window.OwOEmotion) {
         return setTimeout(boot, 30);
       }
 
-      var mount = document.querySelector('.OwO[data-owo-uid="' + config.uid + '"]');
-      if (!mount) return; // 当前页无此组件（Swup 已切走）
-
       var area = document.querySelector(config.target);
-      if (!area) return; // textarea 不在
+      if (!area) return;                     // textarea 还没插进来
 
-      /* 重建面板 */
+      // 先打标记，避免并发 boot 重复执行
+      mount.dataset.owoReady = '1';
+
       mount.innerHTML = '';
       new window.OwO({
         logo: config.logo,
@@ -161,7 +160,7 @@ const config = {
         api: config.customApi || buildDefaultApi(),
       });
 
-      /* 渲染器（全局单例） */
+      // 渲染器（全局单例，跨实例复用）
       if (config.renderSelector) {
         if (!window.__owoRenderer__) {
           window.__owoRenderer__ = new window.OwOEmotion(
@@ -174,19 +173,15 @@ const config = {
       }
     }
 
-    /* 首次 */
+    /* 首次 / 切页后立即执行（data-astro-rerun 已保证 DOM 就绪） */
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', boot);
     } else {
       boot();
     }
 
-    /* Swup 切页后重建 */
-    document.addEventListener('swup:page:view', boot);
-    document.addEventListener('swup:content:replace', boot);
-
-    /* 对外 API：AJAX 提交后可手动补扫 */
-    window.SnowiOwO = window.SnowiOwO || {
+    /* 每次切页都覆盖为最新 config，保证 reparse 用的是当前页配置 */
+    window.SnowiOwO = {
       reparse: function () {
         if (window.__owoRenderer__ && config.renderSelector) {
           document.querySelectorAll(config.renderSelector).forEach(function (el) {
