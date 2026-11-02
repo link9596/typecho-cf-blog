@@ -69,7 +69,7 @@
       const sorted = markers.slice().sort((a, b) => b.length - a.length);
       const alternation = sorted.map(m => escapeRegExp(m)).join('|');
       o.pattern = new RegExp('(' + alternation + ')\\(([a-zA-Z0-9_]+)\\)', 'g');
-      o.hint = sorted[0];
+      o.hint = sorted;
     } else {
       o.pattern = null;
       o.hint = null;
@@ -131,7 +131,10 @@
       while ((node = walker.nextNode())) {
         const v = node.nodeValue;
         if (!v) continue;
-        if (o.hint && v.indexOf(o.hint) === -1) continue;
+        if (o.hint) {
+          const hints = Array.isArray(o.hint) ? o.hint : [o.hint];
+          if (!hints.some(h => v.indexOf(h) !== -1)) continue;
+        }
         textNodes.push(node);
       }
 
