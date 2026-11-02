@@ -368,7 +368,7 @@ export async function getRenderedExcerpts(
     return { item, text, excerptHtml, sourceHash };
   }));
 
-  // 4. 一次性写回（不覆盖已有的 renderedHtml —— 只维护摘要与 hash）
+  // 4. 一次性写回（不覆盖已有的 renderedHtml —— 只维护摘要与时间戳）
   const statements = rendered.map(({ item, excerptHtml, sourceHash }) =>
     db.insert(schema.contentsRendered)
       .values({
@@ -381,7 +381,7 @@ export async function getRenderedExcerpts(
         target: [schema.contentsRendered.cid],
         set: {
           renderedExcerpt: excerptHtml,
-          sourceHash,
+          //sourceHash,
           renderedAt,
         },
       }),
