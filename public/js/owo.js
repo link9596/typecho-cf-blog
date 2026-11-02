@@ -287,7 +287,7 @@
       }
       this.container = option.container;
       this.target = option.target;
-      this.container.classList.add('OwO-down');
+      this.container.classList.add(option.position === 'up' ? 'OwO-up' : 'OwO-down');
       if (typeof option.api === 'object') {
         this.odata = option.api;
         this.init(option);
@@ -381,7 +381,7 @@
       this.container.classList.toggle('OwO-open');
     }
 
-    /* iOS 非线性切换：完整掉落 → 同步换列表 + 高度过渡 → 新表情波浪入场 */
+    /* 完整掉落 → 同步换列表 + 高度过渡 → 新表情波浪入场 */
     tab(index) {
       const allItems = this.container.getElementsByClassName('OwO-items');
       const currentShow = this.container.getElementsByClassName('OwO-items-show')[0];
