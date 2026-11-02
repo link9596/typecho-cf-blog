@@ -59,7 +59,7 @@ const { comments, commentOptions, gravatarMap, permalink } = Astro.props;
         </div>
       )}
 
-      <div class="comment-content" set:html={node.text} />
+      <div class="comment-content comment-text" set:html={node.text} />
 
       {commentOptions.allowComment && (
         <div class="comment-reply">
