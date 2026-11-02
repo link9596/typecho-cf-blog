@@ -52,6 +52,109 @@ html.snowi-dark {
   --accent-color: #dcdcdc;
 }
 
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    user-select: none;
+    overflow: hidden;
+}
+
+.lightbox-blur {
+    position: absolute;
+    inset: 0;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+    will-change: opacity;
+}
+
+.lightbox-dim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.78);
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+    will-change: opacity;
+}
+
+.lightbox-overlay.is-open .lightbox-blur,
+.lightbox-overlay.is-open .lightbox-dim { opacity: 1; }
+
+/* 克隆容器：初始定位到最终位置，飞行动画只用 transform */
+.lightbox-clone {
+    position: fixed;
+    z-index: 10001;
+    transform-origin: center center;
+    will-change: transform, opacity;
+    opacity: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    background: #1a1a1c;
+    cursor: pointer;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* 克隆内的 img / video 保持官方类名，直接套用官方过渡，
+   但把层级顺序换成"img 上层、video 下层"，与官方卡片一致 */
+.lightbox-clone .live-photo-img {
+    z-index: 2;
+    opacity: 1;
+    transform: scale(1);
+    transition: opacity 0.3s linear, transform 0.3s linear;
+}
+
+.lightbox-clone .live-photo-video {
+    z-index: 1;
+    transform: scale(1);
+    transition: transform 0.3s linear;
+}
+
+.lightbox-clone.is-playing .live-photo-img {
+    opacity: 0;
+    transform: scale(1.08);
+}
+
+.lightbox-clone.is-playing .live-photo-video {
+    transform: scale(1.08);
+}
+
+.lightbox-clone.zoomed { cursor: grab; }
+.lightbox-clone.dragging { cursor: grabbing; }
+
+.lightbox-close-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10002;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.2s ease;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.lightbox-overlay.is-open .lightbox-close-btn { opacity: 1; }
+.lightbox-close-btn:hover { transform: scale(1.08); }
+.lightbox-close-btn:active { transform: scale(0.96); }
+.lightbox-close-btn svg { width: 18px; height: 18px; }
+
 .snowi-page {
   background-color: var(--bg-color);
   font-family: var(--font-sans);
