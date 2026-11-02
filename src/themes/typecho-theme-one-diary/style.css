@@ -2437,3 +2437,21 @@ html.is-swup-loading .snowi-page mood-player {
   color: var(--accent-color); font-weight: 700; background: var(--card-bg);
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
+
+html.snowi-dark .OwO .OwO-logo:hover { background: rgba(255,255,255,0.08); }
+html.snowi-dark .OwO .OwO-bar { background: #1e1e20; }
+
+/* OwO 表情按钮与提交按钮同行 */
+.snowi-page .comment-form .form-submit.form-submit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 面板向上弹（从按钮上方展开） */
+.snowi-page .OwO.OwO-up .OwO-body {
+  bottom: calc(100% + 10px);
+  top: auto;
+  transform-origin: bottom left;
+}
