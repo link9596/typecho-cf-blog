@@ -1,9 +1,10 @@
 /*!
- * LivePhoto + Lightbox (v11)
- * - 视频结束：暂停在最后一帧 → img 淡入 0.3s → 延迟 500ms 复位（对齐原版 _scheduleVideoReset）
- * - clone 全程 opacity: 1，无淡入淡出 → badge 不闪
- * - 移动原 video / badge：状态实时继承，零加载
- * - width/height 过渡：容器边界从卡片"揭开"
+ * LivePhoto + Lightbox (v14)
+ * - 圆角参与几何过渡：起始 = 卡片圆角，结束 = max(卡片圆角, 12px)，时长/easing 与几何一致
+ * - 几何过渡打开/关闭统一 0.4s + 同一 easing
+ * - 视频结束：暂停最后一帧 → img 淡入 → 延迟 500ms 复位（对齐原版）
+ * - clone 全程 opacity: 1，badge 不闪
+ * - 移动原 video / badge：零加载，状态实时继承
  * - 无 box-shadow
  */
 (function (global) {
@@ -34,6 +35,17 @@
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn:active{transform:scale(.96)}
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn svg{width:18px!important;height:18px!important;display:block!important;fill:none!important;stroke:currentColor!important;stroke-width:2!important;stroke-linecap:round!important;stroke-linejoin:round!important}
 `;
+
+    /* ★ 几何 + 圆角统一时长/easing */
+    const GEOM_DURATION = 400;
+    const GEOM_EASING = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
+    const GEOM_TRANSITION =
+        `left ${GEOM_DURATION}ms ${GEOM_EASING}, ` +
+        `top ${GEOM_DURATION}ms ${GEOM_EASING}, ` +
+        `width ${GEOM_DURATION}ms ${GEOM_EASING}, ` +
+        `height ${GEOM_DURATION}ms ${GEOM_EASING}, ` +
+        `border-radius ${GEOM_DURATION}ms ${GEOM_EASING}`;
+    const GEOM_FALLBACK_TIMEOUT = GEOM_DURATION + 120;
 
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) return;
@@ -68,6 +80,26 @@
             }
             c._paddingFallbackAdded = true;
         }
+    }
+
+    /* 读取元素的圆角，0/无效值用 12px 兜底 */
+    function getInheritedRadius(el) {
+        if (!el) return '12px';
+        try {
+            const r = getComputedStyle(el).borderRadius;
+            if (!r) return '12px';
+            if (/^0+(px)?(\s+0+(px)?)*$/i.test(r.trim())) return '12px';
+            return r;
+        } catch (_) {
+            return '12px';
+        }
+    }
+
+    /* 灯箱圆角 = 继承卡片圆角；小于 12px 时用 12px 作合理下限 */
+    function getLightboxRadius(cardRadius) {
+        const num = parseFloat(cardRadius);
+        if (isNaN(num)) return '12px';
+        return num >= 12 ? cardRadius : '12px';
     }
 
     class LivePhotoInstance {
@@ -479,6 +511,7 @@
         }
     }
 
+    /* ========== Lightbox ========== */
     const MIN_SCALE = 1, MAX_SCALE = 5;
     let lbState = null;
 
@@ -761,13 +794,6 @@
         lbState = null;
     }
 
-    /**
-     * clone 内独立播放控制，行为与原 LivePhotoInstance 完全一致：
-     *  - 播放：currentTime 归零后 play()
-     *  - 停止（mouseleave / touchend / endThreshold / ended）：
-     *      pause 停在当前位置（保留最后一帧） → 移除 is-playing（img 0.3s 淡入）
-     *      → 延迟 500ms 才 currentTime = 0（用户不可见，对齐原版 _scheduleVideoReset）
-     */
     function bindCloneVideo(clone, video) {
         if (!lbState) return;
         const END_THRESHOLD = 0.6;
@@ -808,13 +834,10 @@
         const doStop = () => {
             wantPlay = false;
             clearReset();
-            // 暂停在当前位置，保留最后一帧
             if (!video.paused) {
                 try { video.pause(); } catch (_) {}
             }
-            // img 0.3s 淡入覆盖视频（保留视频的最后一帧在下面）
             clone.classList.remove('is-playing');
-            // 0.3s 过渡结束后再复位，用户不可见
             resetTimer = setTimeout(() => {
                 resetTimer = null;
                 if (!wantPlay) {
@@ -897,6 +920,11 @@
         const originalInstance = originalContainer ? originalContainer._livePhotoInstance : null;
         if (originalInstance) originalInstance.suspend();
 
+        /* ★ 继承卡片圆角，目标 = max(cardRadius, 12px) */
+        const radiusSource = (isLivePhoto && originalContainer) ? originalContainer : imgElement;
+        const cardRadius = getInheritedRadius(radiusSource);
+        const lightboxRadius = getLightboxRadius(cardRadius);
+
         const overlay = createOverlayDOM();
         const clone = document.createElement('div');
         clone.className = 'lightbox-clone lightbox-clone-img';
@@ -932,13 +960,13 @@
             }
         }
 
-        // ★ 初始 = 卡片位置，opacity 始终 1（不做淡入，避免 badge 闪）
+        /* 初始圆角 = 卡片圆角；目标圆角 = lightboxRadius；两者都走几何过渡 */
+        clone.style.borderRadius = cardRadius;
         clone.style.left = startRect.left + 'px';
         clone.style.top = startRect.top + 'px';
         clone.style.width = startRect.width + 'px';
         clone.style.height = startRect.height + 'px';
         clone.style.opacity = '1';
-        clone.style.borderRadius = '6px';
 
         overlay.appendChild(clone);
         document.body.appendChild(overlay);
@@ -962,6 +990,8 @@
             isAnimating: true,
             initialDistance: 0, initialScale: 1, lastTap: 0, tapTimer: null,
             resizeHandler: null, escHandler: null,
+            _cardRadius: cardRadius,
+            _lightboxRadius: lightboxRadius,
             _originalVideo: originalVideo,
             _videoParent: videoParent,
             _videoNext: videoNext,
@@ -974,12 +1004,8 @@
 
         void clone.offsetWidth;
 
-        // ★ 只过渡几何，不涉及 opacity
-        const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
-        clone.style.transition =
-            `left 0.4s ${easing}, top 0.4s ${easing}, ` +
-            `width 0.4s ${easing}, height 0.4s ${easing}, ` +
-            `border-radius 0.25s ease`;
+        /* ★ 圆角也参与几何过渡：时长/easing 完全一致 */
+        clone.style.transition = GEOM_TRANSITION;
 
         requestAnimationFrame(() => {
             if (!lbState) return;
@@ -988,7 +1014,7 @@
             clone.style.top = finalTop + 'px';
             clone.style.width = finalW + 'px';
             clone.style.height = finalH + 'px';
-            clone.style.borderRadius = (finalW < 400 ? 10 : 12) + 'px';
+            clone.style.borderRadius = lightboxRadius; // 圆角和几何一起平滑过渡
         });
 
         const finishOpen = () => {
@@ -1004,6 +1030,8 @@
 
         const onTE = (e) => {
             if (e.target !== clone) return;
+            // left / top / width / height / border-radius 同时长同时结束，
+            // 只认第一个避免回调多次触发
             if (e.propertyName !== 'left') return;
             clone.removeEventListener('transitionend', onTE);
             finishOpen();
@@ -1014,7 +1042,7 @@
                 clone.removeEventListener('transitionend', onTE);
                 finishOpen();
             }
-        }, 520);
+        }, GEOM_FALLBACK_TIMEOUT);
 
         overlay.addEventListener('click', (e) => {
             if (!lbState || lbState.isAnimating) return;
@@ -1045,7 +1073,7 @@
         if (!lbState) return;
         if (lbState.isAnimating && !skipAnimation) return;
 
-        const { overlayEl, cloneEl, originalImg } = lbState;
+        const { overlayEl, cloneEl, originalImg, _cardRadius } = lbState;
 
         if (lbState.resizeHandler) { window.removeEventListener('resize', lbState.resizeHandler); lbState.resizeHandler = null; }
         if (lbState.escHandler) { window.removeEventListener('keydown', lbState.escHandler); lbState.escHandler = null; }
@@ -1075,18 +1103,14 @@
         cloneEl.style.transform = '';
         void cloneEl.offsetWidth;
 
-        // ★ 只过渡几何，无 opacity 变化
-        const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
-        cloneEl.style.transition =
-            `left 0.35s ${easing}, top 0.35s ${easing}, ` +
-            `width 0.35s ${easing}, height 0.35s ${easing}, ` +
-            `border-radius 0.25s ease`;
+        /* ★ 关闭：几何 + 圆角一起飞回 */
+        cloneEl.style.transition = GEOM_TRANSITION;
 
         cloneEl.style.left = startRect.left + 'px';
         cloneEl.style.top = startRect.top + 'px';
         cloneEl.style.width = startRect.width + 'px';
         cloneEl.style.height = startRect.height + 'px';
-        cloneEl.style.borderRadius = '6px';
+        cloneEl.style.borderRadius = _cardRadius;
 
         const onEnd = (e) => {
             if (e.target !== cloneEl) return;
@@ -1095,7 +1119,7 @@
             destroyOverlay();
         };
         cloneEl.addEventListener('transitionend', onEnd);
-        setTimeout(() => { if (lbState) destroyOverlay(); }, 500);
+        setTimeout(() => { if (lbState) destroyOverlay(); }, GEOM_FALLBACK_TIMEOUT);
     }
 
     function initLightbox(selector = '.lightbox-img') {
