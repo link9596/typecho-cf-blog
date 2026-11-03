@@ -1,5 +1,6 @@
 /*!
- * LivePhoto + Lightbox (v14-fixed3)
+ * LivePhoto + Lightbox (v14-fixed4)
+ * - 修复移动端 touchstart + 模拟 mouseenter 重复触发导致首次长按后视频卡一下从头播放
  * - 进度圈 = 视频网络加载进度（buffered / fake schedule），不是播放进度
  * - suspend() 不动 fake progress / progressMode / 进度圈，badge 进度自然继承
  * - 灯箱内进度圈继续由原实例的 progress 事件与 fake schedule 驱动
@@ -381,7 +382,7 @@
             if (!wasEnding) this._scheduleVideoReset();
         }
 
-        /* ★ 只清理 pending 状态，不动 fake progress / progressMode / 进度圈，badge 进度自然继承 */
+        /* 只清理 pending 状态，不动 fake progress / progressMode / 进度圈，badge 进度自然继承 */
         suspend() {
             this._clearLongPressTimer();
             this._cancelScheduledReset();
@@ -851,7 +852,13 @@
             if (!wantPlay) return;
             clearReset();
             clearRetry();
-            if (video.currentTime !== 0) {
+            /* 防重入：已经在播放则只确保状态，不重置 currentTime、不重复 play */
+            if (!video.paused && isPlaying) {
+                clone.classList.add('is-playing');
+                return;
+            }
+            /* 只在暂停时归零，避免移动端模拟 mouseenter 重复触发把正在播放的视频拉回 0 */
+            if (video.paused && video.currentTime !== 0) {
                 try { video.currentTime = 0; } catch (_) {}
             }
             const p = video.play();
@@ -859,7 +866,6 @@
             if (p && p.catch) {
                 p.catch(() => {
                     cancelPlay();
-                    /* 失败后若仍在 hover，延迟重试，避免一次失败后无法播放 */
                     if (hovering && wantPlay) {
                         clearRetry();
                         retryTimer = setTimeout(() => {
@@ -889,6 +895,9 @@
         };
 
         const doPlay = () => {
+            longPressTimer = null;
+            /* 防重入：已在播放则直接返回，避免 touchstart + 模拟 mouseenter 双重触发 */
+            if (isPlaying && !video.paused) return;
             wantPlay = true;
             clearReset();
             if (video.readyState < 2) {
