@@ -1,11 +1,10 @@
 /*!
- * LivePhoto + Lightbox (v14-fixed)
- * - 修复 suspend 清理不完整
- * - 修复灯箱 play 失败处理
- * - 修复灯箱长按缺少 touchmove 取消
- * - 修复灯箱 badge 进度圈不更新
- * - 修复移动原 DOM 的边缘风险
- * - 圆角过渡回归旧版：12px -> 10px，关闭回 12px
+ * LivePhoto + Lightbox (v14-fixed2)
+ * - suspend 保留 fake progress 与进度圈 offset，badge 进度自然继承
+ * - 灯箱内播放时才切换进度模式，进度圈按 currentTime/duration 走完
+ * - play 失败重试，避免一次失败后无法播放
+ * - 灯箱长按支持 touchmove 取消
+ * - 圆角回归旧版：12px -> 10px
  */
 (function (global) {
     'use strict';
@@ -36,7 +35,6 @@
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn svg{width:18px!important;height:18px!important;display:block!important;fill:none!important;stroke:currentColor!important;stroke-width:2!important;stroke-linecap:round!important;stroke-linejoin:round!important}
 `;
 
-    /* 几何 + 圆角统一时长/easing（圆角值回归旧版：12px -> 10px） */
     const GEOM_DURATION = 400;
     const GEOM_EASING = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
     const GEOM_TRANSITION =
@@ -382,7 +380,7 @@
             if (!wasEnding) this._scheduleVideoReset();
         }
 
-        /* ★ 修复：打开灯箱时彻底暂停并清理原实例的 pending 状态 */
+        /* ★ 修复：只清理真正的 pending 状态，不动 fake progress / 进度圈，badge 进度自然继承 */
         suspend() {
             this._clearLongPressTimer();
             this._cancelScheduledReset();
@@ -396,10 +394,6 @@
                 clearTimeout(this.loadTimeout);
                 this.loadTimeout = null;
             }
-
-            this._stopAllFakeProgress();
-            this.progressMode = false;
-            this._setDotPattern();
 
             this.isEndingGracefully = false;
             this.isPlaying = false;
@@ -813,27 +807,29 @@
         lbState = null;
     }
 
-    /* ★ 修复：灯箱内视频播放、进度、长按移动取消、play 失败处理 */
+    /* ★ 修复：播放时才切换进度模式，进度圈按 currentTime/duration 走完；play 失败重试 */
     function bindCloneVideo(clone, video, originalInstance) {
         if (!lbState) return;
         const END_THRESHOLD = 0.6;
         const LONG_PRESS_DELAY = 150;
         const RESET_DELAY = 500;
         const MOVE_CANCEL_THRESHOLD = 10;
+        const RETRY_DELAY = 300;
 
         let longPressTimer = null;
         let resetTimer = null;
+        let retryTimer = null;
         let playingTimer = null;
         let playingHandler = null;
         let waitingCanPlay = false;
         let wantPlay = false;
         let isPlaying = false;
+        let hovering = false;
         let touchStartX = 0;
         let touchStartY = 0;
 
-        const clearReset = () => {
-            if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
-        };
+        const clearReset = () => { if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; } };
+        const clearRetry = () => { if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; } };
 
         const cleanupPlaying = () => {
             if (playingTimer) { clearTimeout(playingTimer); playingTimer = null; }
@@ -845,35 +841,53 @@
 
         const restoreDotPattern = () => {
             if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
-                try { originalInstance._setDotPattern(); } catch (_) {}
+                try {
+                    originalInstance._stopAllFakeProgress();
+                    originalInstance.progressMode = false;
+                    originalInstance._setDotPattern();
+                } catch (_) {}
             }
         };
 
-        const enableProgress = () => {
+        /* 进入播放：停掉 fake progress，切进度模式，保留当前 offset 以继承 */
+        const enterProgressMode = () => {
             if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
                 try {
+                    originalInstance._stopAllFakeProgress();
+                    originalInstance.progressMode = false;
                     originalInstance._enableProgressMode();
-                    originalInstance._setProgress(0);
                 } catch (_) {}
             }
+        };
+
+        const cancelPlay = () => {
+            isPlaying = false;
+            cleanupPlaying();
+            clone.classList.remove('is-playing');
+            try { video.pause(); } catch (_) {}
         };
 
         const tryPlay = () => {
             if (!wantPlay) return;
             clearReset();
-            waitingCanPlay = false;
+            clearRetry();
             if (video.currentTime !== 0) {
                 try { video.currentTime = 0; } catch (_) {}
             }
+            enterProgressMode();
             const p = video.play();
             isPlaying = true;
             if (p && p.catch) {
                 p.catch(() => {
-                    isPlaying = false;
-                    wantPlay = false;
-                    cleanupPlaying();
-                    clone.classList.remove('is-playing');
-                    try { video.pause(); } catch (_) {}
+                    cancelPlay();
+                    /* 失败后若仍在 hover，延迟重试，避免一次失败后无法播放 */
+                    if (hovering && wantPlay) {
+                        clearRetry();
+                        retryTimer = setTimeout(() => {
+                            retryTimer = null;
+                            if (hovering && wantPlay && video.paused) tryPlay();
+                        }, RETRY_DELAY);
+                    }
                 });
             }
             cleanupPlaying();
@@ -886,9 +900,8 @@
             video.addEventListener('playing', playingHandler, { once: true });
             playingTimer = setTimeout(() => {
                 playingTimer = null;
-                if (wantPlay) clone.classList.add('is-playing');
+                if (wantPlay && isPlaying && !video.paused) clone.classList.add('is-playing');
             }, 500);
-            enableProgress();
         };
 
         const onCanPlay = () => {
@@ -916,6 +929,7 @@
             wantPlay = false;
             isPlaying = false;
             clearReset();
+            clearRetry();
             if (waitingCanPlay) {
                 video.removeEventListener('canplay', onCanPlay);
                 waitingCanPlay = false;
@@ -934,8 +948,8 @@
             }, RESET_DELAY);
         };
 
-        const onEnter = () => doPlay();
-        const onLeave = () => doStop();
+        const onEnter = () => { hovering = true; doPlay(); };
+        const onLeave = () => { hovering = false; doStop(); };
 
         const onTouchStart = (e) => {
             if (e.touches && e.touches[0]) {
@@ -969,9 +983,11 @@
         const onTimeUpdate = () => {
             if (!isPlaying) return;
             const d = video.duration;
-            if (isNaN(d)) return;
+            if (isNaN(d) || d <= 0) return;
+            /* 进度圈按播放进度走，走完即恢复点状 */
             if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
-                try { originalInstance._setProgress(originalInstance._getRealBufferedPercent()); } catch (_) {}
+                const p = Math.min(1, Math.max(0, video.currentTime / d));
+                try { originalInstance._setProgress(p); } catch (_) {}
             }
             if (d - video.currentTime <= END_THRESHOLD) doStop();
         };
@@ -989,6 +1005,7 @@
         lbState._cleanupVideo = () => {
             clearTimeout(longPressTimer);
             clearReset();
+            clearRetry();
             cleanupPlaying();
             if (waitingCanPlay) {
                 video.removeEventListener('canplay', onCanPlay);
@@ -1068,7 +1085,6 @@
             }
         }
 
-        /* 圆角回归旧版：初始 12px，打开 10px，关闭回 12px */
         clone.style.borderRadius = CLONE_RADIUS_START;
         clone.style.left = startRect.left + 'px';
         clone.style.top = startRect.top + 'px';
