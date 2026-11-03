@@ -1,9 +1,9 @@
 /*!
- * LivePhoto + Lightbox (v6 — 正确视觉 + 性能优化)
- * - width/height 过渡：容器边界从卡片"揭开"，图片 cover 到当前尺寸，不变形
- * - 关键性能优化：动画期间移除 box-shadow，border-radius 简化
+ * LivePhoto + Lightbox (v7)
+ * - 无 box-shadow（性能）
+ * - 灯箱内完全复用原 LivePhotoInstance（长按延迟 / 进度环 / 优雅结束 / 复位时序一致）
+ * - width/height 过渡：容器边界从卡片"揭开"，图片 cover 不变形
  * - 灯箱 CSS 全内置
- * - 视频 ended 自动回图片
  */
 (function (global) {
     'use strict';
@@ -55,7 +55,7 @@
 .lightbox-overlay.lightbox-overlay.is-open .lightbox-blur,
 .lightbox-overlay.lightbox-overlay.is-open .lightbox-dim { opacity: 1; }
 
-/* Clone：无 box-shadow（JS 控制），无 will-change（JS 控制） */
+/* Clone：无 box-shadow */
 .lightbox-overlay.lightbox-overlay .lightbox-clone {
     position: fixed !important;
     margin: 0 !important;
@@ -90,10 +90,12 @@
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img {
     z-index: 2 !important;
     opacity: 1;
+    transform: scale(1);
     transition: opacity 0.3s linear, transform 0.3s linear;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video {
     z-index: 1 !important;
+    transform: scale(1);
     background-color: #000 !important;
     transition: transform 0.3s linear;
 }
@@ -131,7 +133,6 @@
     margin: 0 !important; padding: 0 !important;
     flex: 0 0 auto;
 }
-/* 只对 normal icon 强制 block，避免 disabled 图标也被显示 */
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-icon-svg:not(.live-photo-disabled-icon) {
     display: block; width: 100% !important; height: 100% !important;
 }
@@ -565,23 +566,55 @@
             if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
         }
 
+        /* 事件绑定：拆出 container 维度的绑定，方便灯箱切换 */
         _bindEvents() {
-            const c = this.container;
             this._containerHandlers.mouseenter = () => this.start();
             this._containerHandlers.mouseleave = () => this.stop();
             this._containerHandlers.touchstart = (e) => this._onTouchStart(e);
             this._containerHandlers.touchmove = (e) => this._onTouchMove(e);
             this._containerHandlers.touchend = () => this._onTouchEnd();
             this._containerHandlers.touchcancel = () => this._onTouchCancel();
-            c.addEventListener('mouseenter', this._containerHandlers.mouseenter);
-            c.addEventListener('mouseleave', this._containerHandlers.mouseleave);
-            c.addEventListener('touchstart', this._containerHandlers.touchstart, { passive: true });
-            c.addEventListener('touchmove', this._containerHandlers.touchmove, { passive: true });
-            c.addEventListener('touchend', this._containerHandlers.touchend);
-            c.addEventListener('touchcancel', this._containerHandlers.touchcancel);
+            this._bindContainerEvents();
+        }
+        _bindContainerEvents() {
+            const c = this.container;
+            const h = this._containerHandlers;
+            if (!c || !h.mouseenter) return;
+            c.addEventListener('mouseenter', h.mouseenter);
+            c.addEventListener('mouseleave', h.mouseleave);
+            c.addEventListener('touchstart', h.touchstart, { passive: true });
+            c.addEventListener('touchmove', h.touchmove, { passive: true });
+            c.addEventListener('touchend', h.touchend);
+            c.addEventListener('touchcancel', h.touchcancel);
+        }
+        _unbindContainerEvents() {
+            const c = this.container;
+            const h = this._containerHandlers;
+            if (!c || !h.mouseenter) return;
+            c.removeEventListener('mouseenter', h.mouseenter);
+            c.removeEventListener('mouseleave', h.mouseleave);
+            c.removeEventListener('touchstart', h.touchstart);
+            c.removeEventListener('touchmove', h.touchmove);
+            c.removeEventListener('touchend', h.touchend);
+            c.removeEventListener('touchcancel', h.touchcancel);
+        }
+
+        /**
+         * ★ 把实例"挂靠"到新的容器（灯箱 clone）上：
+         *   - 保留 badge / video 引用（它们跟着 DOM 移动）
+         *   - 切换 container 与 imgEl 引用
+         *   - 重新绑定容器事件
+         * 这样灯箱内的播放行为（长按延迟、进度环、endThreshold、复位时序）与原卡片完全一致。
+         */
+        swapContainer(newContainer, newImgEl) {
+            this._unbindContainerEvents();
+            this.container = newContainer;
+            if (newImgEl) this.imgEl = newImgEl;
+            this._bindContainerEvents();
         }
 
         destroy() {
+            this._unbindContainerEvents();
             this._clearLongPressTimer();
             this._stopAllFakeProgress();
             if (this.loadTimeout) { clearTimeout(this.loadTimeout); this.loadTimeout = null; }
@@ -599,17 +632,10 @@
             v.removeEventListener('progress', this._videoHandlers.progress);
             v.removeEventListener('timeupdate', this._videoHandlers.timeupdate);
             v.removeEventListener('ended', this._videoHandlers.ended);
-            const c = this.container;
-            c.removeEventListener('mouseenter', this._containerHandlers.mouseenter);
-            c.removeEventListener('mouseleave', this._containerHandlers.mouseleave);
-            c.removeEventListener('touchstart', this._containerHandlers.touchstart);
-            c.removeEventListener('touchmove', this._containerHandlers.touchmove);
-            c.removeEventListener('touchend', this._containerHandlers.touchend);
-            c.removeEventListener('touchcancel', this._containerHandlers.touchcancel);
-            const badge = c.querySelector('.live-photo-badge');
-            if (badge) badge.remove();
-            c.classList.remove('is-playing');
-            if (c._livePhotoInstance === this) c._livePhotoInstance = null;
+            const badge = this.container.querySelector('.live-photo-badge');
+            if (badge && badge.parentNode === this.container) badge.remove();
+            this.container.classList.remove('is-playing');
+            if (this.container._livePhotoInstance === this) this.container._livePhotoInstance = null;
         }
     }
 
@@ -880,29 +906,22 @@
         if (lbState.resizeHandler) window.removeEventListener('resize', lbState.resizeHandler);
         if (lbState.escHandler) window.removeEventListener('keydown', lbState.escHandler);
 
-        if (lbState._videoListeners) {
-            const vl = lbState._videoListeners;
-            const c = lbState.cloneEl;
-            if (c) {
-                c.removeEventListener('mouseenter', vl.play);
-                c.removeEventListener('mouseleave', vl.pause);
-                c.removeEventListener('touchstart', vl.play);
-                c.removeEventListener('touchend', vl.pause);
-                c.removeEventListener('touchcancel', vl.pause);
-            }
-            if (lbState.videoEl) lbState.videoEl.removeEventListener('ended', vl.onEnded);
-            lbState._videoListeners = null;
+        // ★ 先把 instance 挂靠回原容器（同时解绑 clone 上的事件，绑回原卡片）
+        if (lbState._instance && lbState._originalContainer) {
+            lbState._instance.swapContainer(lbState._originalContainer, lbState._originalImg);
         }
 
-        if (lbState.videoMoved && lbState.originalVideoParent && lbState.originalVideoParent.isConnected) {
-            const v = lbState.cloneEl.querySelector('.live-photo-video');
-            if (v && v.parentNode === lbState.cloneEl) {
-                try { v.pause(); v.currentTime = 0; } catch (_) {}
-                const orig = lbState.originalVideoInlineStyle || '';
-                if (orig) v.setAttribute('style', orig);
-                else v.removeAttribute('style');
-                try { lbState.originalVideoParent.insertBefore(v, lbState.originalVideoNext); }
-                catch (_) { lbState.originalVideoParent.appendChild(v); }
+        // 再把 badge / video 从 clone 移回原容器
+        const clone = lbState.cloneEl;
+        if (lbState._originalContainer) {
+            const video = clone.querySelector('.live-photo-video');
+            if (video) {
+                try { video.pause(); video.currentTime = 0; } catch (_) {}
+                try { lbState._originalContainer.appendChild(video); } catch (_) {}
+            }
+            const badge = clone.querySelector('.live-photo-badge');
+            if (badge) {
+                try { lbState._originalContainer.appendChild(badge); } catch (_) {}
             }
         }
 
@@ -938,9 +957,11 @@
         const finalLeft = (vw - finalW) / 2;
         const finalTop = (vh - finalH) / 2;
 
-        if (originalContainer && originalContainer._livePhotoInstance) {
-            originalContainer._livePhotoInstance.suspend();
-        }
+        // 拿到现有实例（若有）
+        const instance = originalContainer && originalContainer._livePhotoInstance;
+
+        // 停播 + 清长按定时器
+        if (instance) instance.suspend();
 
         const overlay = createOverlayDOM();
         const clone = document.createElement('div');
@@ -953,55 +974,36 @@
         img.draggable = false;
         clone.appendChild(img);
 
-        let video = null, videoMoved = false;
-        let originalVideoParent = null, originalVideoNext = null, originalVideoInlineStyle = '';
-        let badgeClone = null;
+        // 记录原始 imgEl，关闭时恢复
+        const originalImgEl = instance ? instance.imgEl : null;
 
-        if (isLivePhoto) {
-            const ob = originalContainer.querySelector('.live-photo-badge');
-            if (ob) {
-                badgeClone = ob.cloneNode(true);
-                const ids = badgeClone.querySelectorAll('[id]');
-                for (let i = 0; i < ids.length; i++) ids[i].removeAttribute('id');
-                clone.appendChild(badgeClone);
+        if (isLivePhoto && instance) {
+            // ★ 复用实例：直接把 badge + video 从原容器搬进 clone
+            const originalVideo = instance.videoEl;
+            const originalBadge = originalContainer.querySelector('.live-photo-badge');
+            if (originalVideo) {
+                try { originalVideo.pause(); } catch (_) {}
+                clone.appendChild(originalVideo);
             }
+            if (originalBadge) clone.appendChild(originalBadge);
 
-            const ov = originalContainer.querySelector('.live-photo-video');
-            if (ov) {
-                originalVideoParent = ov.parentNode;
-                originalVideoNext = ov.nextSibling;
-                originalVideoInlineStyle = ov.getAttribute('style') || '';
-                try { ov.pause(); } catch (_) {}
-                clone.appendChild(ov);
-                video = ov;
-                videoMoved = true;
-            } else {
-                video = document.createElement('video');
-                video.className = 'live-photo-video';
-                video.muted = true;
-                video.playsInline = true;
-                video.setAttribute('playsinline', '');
-                const src = imgElement.dataset.videoSrc ||
-                    (originalContainer.querySelector('.live-photo-video source') || {}).src;
-                if (src) {
-                    const source = document.createElement('source');
-                    source.src = src;
-                    source.type = 'video/mp4';
-                    video.appendChild(source);
-                }
-                clone.appendChild(video);
-            }
+            // ★ 把实例挂靠到 clone 上
+            instance.swapContainer(clone, img);
+        } else if (isLivePhoto) {
+            // 兜底：没拿到实例，构造一个一次性的 video（极少走这里）
+            const originalVideo = originalContainer.querySelector('.live-photo-video');
+            if (originalVideo) clone.appendChild(originalVideo);
+            const originalBadge = originalContainer.querySelector('.live-photo-badge');
+            if (originalBadge) clone.appendChild(originalBadge.cloneNode(true));
         }
 
-        // ★ 初始 = 卡片位置/尺寸
+        // 几何：初始 = 卡片位置，终态 = 灯箱位置
         clone.style.left = startRect.left + 'px';
         clone.style.top = startRect.top + 'px';
         clone.style.width = startRect.width + 'px';
         clone.style.height = startRect.height + 'px';
         clone.style.opacity = '0';
         clone.style.borderRadius = '6px';
-        // ★ 关键：动画期间无阴影，砍掉最大开销
-        clone.style.boxShadow = 'none';
 
         overlay.appendChild(clone);
         document.body.appendChild(overlay);
@@ -1016,22 +1018,22 @@
         }
 
         lbState = {
-            overlayEl: overlay, cloneEl: clone, imgEl: img, videoEl: video,
+            overlayEl: overlay, cloneEl: clone, imgEl: img,
             isLivePhoto, originalContainer, originalImg: imgElement,
-            originalVideoParent, originalVideoNext, videoMoved, originalVideoInlineStyle,
             baseRect: { left: finalLeft, top: finalTop, width: finalW, height: finalH },
             scale: 1, translate: { x: 0, y: 0 },
             dragStart: { x: 0, y: 0 },
             isDragging: false, isResetting: false, isZoomAnimating: false,
             isAnimating: true,
             initialDistance: 0, initialScale: 1, lastTap: 0, tapTimer: null,
-            resizeHandler: null, escHandler: null, _videoListeners: null,
+            resizeHandler: null, escHandler: null,
+            _instance: instance || null,
+            _originalImg: originalImgEl || imgElement,
             _bodyOverflow: bodyOverflow, _bodyPaddingRight: bodyPaddingRight
         };
 
         void clone.offsetWidth;
 
-        // ★ 打开：几何过渡 + 快速淡入
         const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
         clone.style.transition =
             `left 0.4s ${easing}, top 0.4s ${easing}, ` +
@@ -1052,38 +1054,8 @@
         const finishOpen = () => {
             if (!lbState || !lbState.isAnimating) return;
             lbState.isAnimating = false;
-
-            // 动画结束，恢复 box-shadow
-            clone.style.boxShadow = '0 25px 60px rgba(0, 0, 0, 0.55)';
-
-            if (!lbState.isLivePhoto) {
-                bindZoomEvents();
-            } else if (lbState.videoEl) {
-                const v = lbState.videoEl;
-                const play = () => {
-                    if (v.currentTime >= (v.duration || 0) - 0.1) {
-                        try { v.currentTime = 0; } catch (_) {}
-                    }
-                    const p = v.play();
-                    if (p && p.catch) p.catch(() => {});
-                    clone.classList.add('is-playing');
-                };
-                const pause = () => {
-                    try { v.pause(); v.currentTime = 0; } catch (_) {}
-                    clone.classList.remove('is-playing');
-                };
-                const onEnded = () => {
-                    try { v.currentTime = 0; } catch (_) {}
-                    clone.classList.remove('is-playing');
-                };
-                clone.addEventListener('mouseenter', play);
-                clone.addEventListener('mouseleave', pause);
-                clone.addEventListener('touchstart', play, { passive: true });
-                clone.addEventListener('touchend', pause);
-                clone.addEventListener('touchcancel', pause);
-                v.addEventListener('ended', onEnded);
-                lbState._videoListeners = { play, pause, onEnded };
-            }
+            // 非 livephoto 才需要绑定 zoom 事件
+            if (!lbState.isLivePhoto) bindZoomEvents();
         };
 
         const onTE = (e) => {
@@ -1129,15 +1101,14 @@
         if (!lbState) return;
         if (lbState.isAnimating && !skipAnimation) return;
 
-        const { overlayEl, cloneEl, videoEl, originalImg } = lbState;
+        const { overlayEl, cloneEl, originalImg } = lbState;
 
         if (lbState.resizeHandler) { window.removeEventListener('resize', lbState.resizeHandler); lbState.resizeHandler = null; }
         if (lbState.escHandler) { window.removeEventListener('keydown', lbState.escHandler); lbState.escHandler = null; }
         unbindZoomEvents();
 
-        if (videoEl) {
-            try { videoEl.pause(); videoEl.currentTime = 0; } catch (_) {}
-        }
+        // ★ 用实例自己的 suspend：清长按 Timer、停播、复位
+        if (lbState._instance) lbState._instance.suspend();
 
         if (skipAnimation || !overlayEl || !cloneEl || !originalImg) {
             destroyOverlay();
@@ -1151,13 +1122,10 @@
         overlayEl.classList.remove('is-open');
         cloneEl.classList.remove('is-playing', 'zoomed', 'dragging');
 
-        // 清掉可能残留的 zoom/pan transform
+        // 清掉 zoom/pan 遗留的 transform
         cloneEl.style.transition = 'none';
         cloneEl.style.transform = '';
         void cloneEl.offsetWidth;
-
-        // ★ 关闭：先去阴影（省开销），再几何飞回
-        cloneEl.style.boxShadow = 'none';
 
         const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
         cloneEl.style.transition =
