@@ -2153,6 +2153,10 @@ html.snowi-dark .snowi-page .code-digit {
   animation: ph-in 1280ms cubic-bezier(0.32, 0.72, 0, 1) 60ms forwards;
 }
 
+html.snowi-dark .player-placeholder {
+  color: rgba(212, 218, 245, 0.48);
+}
+
 .player-placeholder .ph-text {
   display: flex;
   align-items: center;
