@@ -1,11 +1,11 @@
 /*!
- * LivePhoto + Lightbox (v14)
- * - 圆角参与几何过渡：起始 = 卡片圆角，结束 = max(卡片圆角, 12px)，时长/easing 与几何一致
- * - 几何过渡打开/关闭统一 0.4s + 同一 easing
- * - 视频结束：暂停最后一帧 → img 淡入 → 延迟 500ms 复位（对齐原版）
- * - clone 全程 opacity: 1，badge 不闪
- * - 移动原 video / badge：零加载，状态实时继承
- * - 无 box-shadow
+ * LivePhoto + Lightbox (v14-fixed)
+ * - 修复 suspend 清理不完整
+ * - 修复灯箱 play 失败处理
+ * - 修复灯箱长按缺少 touchmove 取消
+ * - 修复灯箱 badge 进度圈不更新
+ * - 修复移动原 DOM 的边缘风险
+ * - 圆角过渡回归旧版：12px -> 10px，关闭回 12px
  */
 (function (global) {
     'use strict';
@@ -36,7 +36,7 @@
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn svg{width:18px!important;height:18px!important;display:block!important;fill:none!important;stroke:currentColor!important;stroke-width:2!important;stroke-linecap:round!important;stroke-linejoin:round!important}
 `;
 
-    /* ★ 几何 + 圆角统一时长/easing */
+    /* 几何 + 圆角统一时长/easing（圆角值回归旧版：12px -> 10px） */
     const GEOM_DURATION = 400;
     const GEOM_EASING = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
     const GEOM_TRANSITION =
@@ -46,6 +46,9 @@
         `height ${GEOM_DURATION}ms ${GEOM_EASING}, ` +
         `border-radius ${GEOM_DURATION}ms ${GEOM_EASING}`;
     const GEOM_FALLBACK_TIMEOUT = GEOM_DURATION + 120;
+
+    const CLONE_RADIUS_START = '12px';
+    const CLONE_RADIUS_END = '10px';
 
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) return;
@@ -80,26 +83,6 @@
             }
             c._paddingFallbackAdded = true;
         }
-    }
-
-    /* 读取元素的圆角，0/无效值用 12px 兜底 */
-    function getInheritedRadius(el) {
-        if (!el) return '12px';
-        try {
-            const r = getComputedStyle(el).borderRadius;
-            if (!r) return '12px';
-            if (/^0+(px)?(\s+0+(px)?)*$/i.test(r.trim())) return '12px';
-            return r;
-        } catch (_) {
-            return '12px';
-        }
-    }
-
-    /* 灯箱圆角 = 继承卡片圆角；小于 12px 时用 12px 作合理下限 */
-    function getLightboxRadius(cardRadius) {
-        const num = parseFloat(cardRadius);
-        if (isNaN(num)) return '12px';
-        return num >= 12 ? cardRadius : '12px';
     }
 
     class LivePhotoInstance {
@@ -398,11 +381,36 @@
             if (!this.videoEl.paused) this.videoEl.pause();
             if (!wasEnding) this._scheduleVideoReset();
         }
+
+        /* ★ 修复：打开灯箱时彻底暂停并清理原实例的 pending 状态 */
         suspend() {
             this._clearLongPressTimer();
-            if (this.isPlaying || this.isEndingGracefully) this.stop();
-            try { this.videoEl.pause(); this.videoEl.currentTime = 0; } catch (_) {}
+            this._cancelScheduledReset();
+            this._cleanupPlayingWaiter();
+
+            if (this._pendingCanPlay) {
+                this.videoEl.removeEventListener('canplay', this._onCanPlayStart);
+                this._pendingCanPlay = false;
+            }
+            if (this.loadTimeout) {
+                clearTimeout(this.loadTimeout);
+                this.loadTimeout = null;
+            }
+
+            this._stopAllFakeProgress();
+            this.progressMode = false;
+            this._setDotPattern();
+
+            this.isEndingGracefully = false;
+            this.isPlaying = false;
+            this.container.classList.remove('is-playing');
+
+            try {
+                this.videoEl.pause();
+                this.videoEl.currentTime = 0;
+            } catch (_) {}
         }
+
         _endGracefully() {
             if (this.isEndingGracefully || this.loadFailed) return;
             this.isEndingGracefully = true;
@@ -752,29 +760,40 @@
     function destroyOverlay() {
         if (!lbState) return;
 
-        if (lbState._originalBadge && lbState._badgeParent && lbState._badgeParent.isConnected) {
-            try {
-                if (lbState._badgeNext && lbState._badgeNext.parentNode === lbState._badgeParent) {
-                    lbState._badgeParent.insertBefore(lbState._originalBadge, lbState._badgeNext);
-                } else {
-                    lbState._badgeParent.appendChild(lbState._originalBadge);
+        if (lbState._originalBadge) {
+            const badge = lbState._originalBadge;
+            const parent = lbState._badgeParent;
+            if (parent && parent.isConnected) {
+                try {
+                    if (lbState._badgeNext && lbState._badgeNext.parentNode === parent) {
+                        parent.insertBefore(badge, lbState._badgeNext);
+                    } else {
+                        parent.appendChild(badge);
+                    }
+                } catch (_) {
+                    try { parent.appendChild(badge); } catch (__) {}
                 }
-            } catch (_) {
-                try { lbState._badgeParent.appendChild(lbState._originalBadge); } catch (__) {}
+            } else {
+                try { if (badge.parentNode) badge.parentNode.removeChild(badge); } catch (_) {}
             }
         }
 
-        if (lbState._originalVideo && lbState._videoParent && lbState._videoParent.isConnected) {
+        if (lbState._originalVideo) {
             const v = lbState._originalVideo;
             try { v.pause(); v.currentTime = 0; } catch (_) {}
-            try {
-                if (lbState._videoNext && lbState._videoNext.parentNode === lbState._videoParent) {
-                    lbState._videoParent.insertBefore(v, lbState._videoNext);
-                } else {
-                    lbState._videoParent.appendChild(v);
+            const parent = lbState._videoParent;
+            if (parent && parent.isConnected) {
+                try {
+                    if (lbState._videoNext && lbState._videoNext.parentNode === parent) {
+                        parent.insertBefore(v, lbState._videoNext);
+                    } else {
+                        parent.appendChild(v);
+                    }
+                } catch (_) {
+                    try { parent.appendChild(v); } catch (__) {}
                 }
-            } catch (_) {
-                try { lbState._videoParent.appendChild(v); } catch (__) {}
+            } else {
+                try { if (v.parentNode) v.parentNode.removeChild(v); } catch (_) {}
             }
         }
 
@@ -794,28 +813,87 @@
         lbState = null;
     }
 
-    function bindCloneVideo(clone, video) {
+    /* ★ 修复：灯箱内视频播放、进度、长按移动取消、play 失败处理 */
+    function bindCloneVideo(clone, video, originalInstance) {
         if (!lbState) return;
         const END_THRESHOLD = 0.6;
         const LONG_PRESS_DELAY = 150;
         const RESET_DELAY = 500;
+        const MOVE_CANCEL_THRESHOLD = 10;
+
         let longPressTimer = null;
         let resetTimer = null;
+        let playingTimer = null;
+        let playingHandler = null;
+        let waitingCanPlay = false;
         let wantPlay = false;
+        let isPlaying = false;
+        let touchStartX = 0;
+        let touchStartY = 0;
 
         const clearReset = () => {
             if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
         };
 
+        const cleanupPlaying = () => {
+            if (playingTimer) { clearTimeout(playingTimer); playingTimer = null; }
+            if (playingHandler) {
+                video.removeEventListener('playing', playingHandler);
+                playingHandler = null;
+            }
+        };
+
+        const restoreDotPattern = () => {
+            if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
+                try { originalInstance._setDotPattern(); } catch (_) {}
+            }
+        };
+
+        const enableProgress = () => {
+            if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
+                try {
+                    originalInstance._enableProgressMode();
+                    originalInstance._setProgress(0);
+                } catch (_) {}
+            }
+        };
+
         const tryPlay = () => {
             if (!wantPlay) return;
             clearReset();
+            waitingCanPlay = false;
             if (video.currentTime !== 0) {
                 try { video.currentTime = 0; } catch (_) {}
             }
             const p = video.play();
-            if (p && p.catch) p.catch(() => {});
-            clone.classList.add('is-playing');
+            isPlaying = true;
+            if (p && p.catch) {
+                p.catch(() => {
+                    isPlaying = false;
+                    wantPlay = false;
+                    cleanupPlaying();
+                    clone.classList.remove('is-playing');
+                    try { video.pause(); } catch (_) {}
+                });
+            }
+            cleanupPlaying();
+            playingHandler = () => {
+                if (wantPlay) {
+                    cleanupPlaying();
+                    clone.classList.add('is-playing');
+                }
+            };
+            video.addEventListener('playing', playingHandler, { once: true });
+            playingTimer = setTimeout(() => {
+                playingTimer = null;
+                if (wantPlay) clone.classList.add('is-playing');
+            }, 500);
+            enableProgress();
+        };
+
+        const onCanPlay = () => {
+            waitingCanPlay = false;
+            tryPlay();
         };
 
         const doPlay = () => {
@@ -825,7 +903,10 @@
                 if (video.readyState === 0) {
                     try { video.load(); } catch (_) {}
                 }
-                video.addEventListener('canplay', tryPlay, { once: true });
+                if (!waitingCanPlay) {
+                    waitingCanPlay = true;
+                    video.addEventListener('canplay', onCanPlay, { once: true });
+                }
                 return;
             }
             tryPlay();
@@ -833,7 +914,13 @@
 
         const doStop = () => {
             wantPlay = false;
+            isPlaying = false;
             clearReset();
+            if (waitingCanPlay) {
+                video.removeEventListener('canplay', onCanPlay);
+                waitingCanPlay = false;
+            }
+            cleanupPlaying();
             if (!video.paused) {
                 try { video.pause(); } catch (_) {}
             }
@@ -842,6 +929,7 @@
                 resetTimer = null;
                 if (!wantPlay) {
                     try { video.currentTime = 0; } catch (_) {}
+                    restoreDotPattern();
                 }
             }, RESET_DELAY);
         };
@@ -849,9 +937,23 @@
         const onEnter = () => doPlay();
         const onLeave = () => doStop();
 
-        const onTouchStart = () => {
+        const onTouchStart = (e) => {
+            if (e.touches && e.touches[0]) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }
             clearTimeout(longPressTimer);
             longPressTimer = setTimeout(doPlay, LONG_PRESS_DELAY);
+        };
+        const onTouchMove = (e) => {
+            if (!longPressTimer) return;
+            if (!e.touches || !e.touches[0]) return;
+            const dx = Math.abs(e.touches[0].clientX - touchStartX);
+            const dy = Math.abs(e.touches[0].clientY - touchStartY);
+            if (dx > MOVE_CANCEL_THRESHOLD || dy > MOVE_CANCEL_THRESHOLD) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
         };
         const onTouchEnd = () => {
             clearTimeout(longPressTimer);
@@ -865,9 +967,12 @@
         };
 
         const onTimeUpdate = () => {
-            if (!clone.classList.contains('is-playing')) return;
+            if (!isPlaying) return;
             const d = video.duration;
             if (isNaN(d)) return;
+            if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
+                try { originalInstance._setProgress(originalInstance._getRealBufferedPercent()); } catch (_) {}
+            }
             if (d - video.currentTime <= END_THRESHOLD) doStop();
         };
         const onEnded = () => doStop();
@@ -875,6 +980,7 @@
         clone.addEventListener('mouseenter', onEnter);
         clone.addEventListener('mouseleave', onLeave);
         clone.addEventListener('touchstart', onTouchStart, { passive: true });
+        clone.addEventListener('touchmove', onTouchMove, { passive: true });
         clone.addEventListener('touchend', onTouchEnd);
         clone.addEventListener('touchcancel', onTouchCancel);
         video.addEventListener('timeupdate', onTimeUpdate);
@@ -883,13 +989,20 @@
         lbState._cleanupVideo = () => {
             clearTimeout(longPressTimer);
             clearReset();
+            cleanupPlaying();
+            if (waitingCanPlay) {
+                video.removeEventListener('canplay', onCanPlay);
+                waitingCanPlay = false;
+            }
             clone.removeEventListener('mouseenter', onEnter);
             clone.removeEventListener('mouseleave', onLeave);
             clone.removeEventListener('touchstart', onTouchStart);
+            clone.removeEventListener('touchmove', onTouchMove);
             clone.removeEventListener('touchend', onTouchEnd);
             clone.removeEventListener('touchcancel', onTouchCancel);
             video.removeEventListener('timeupdate', onTimeUpdate);
             video.removeEventListener('ended', onEnded);
+            restoreDotPattern();
         };
     }
 
@@ -919,11 +1032,6 @@
 
         const originalInstance = originalContainer ? originalContainer._livePhotoInstance : null;
         if (originalInstance) originalInstance.suspend();
-
-        /* ★ 继承卡片圆角，目标 = max(cardRadius, 12px) */
-        const radiusSource = (isLivePhoto && originalContainer) ? originalContainer : imgElement;
-        const cardRadius = getInheritedRadius(radiusSource);
-        const lightboxRadius = getLightboxRadius(cardRadius);
 
         const overlay = createOverlayDOM();
         const clone = document.createElement('div');
@@ -960,8 +1068,8 @@
             }
         }
 
-        /* 初始圆角 = 卡片圆角；目标圆角 = lightboxRadius；两者都走几何过渡 */
-        clone.style.borderRadius = cardRadius;
+        /* 圆角回归旧版：初始 12px，打开 10px，关闭回 12px */
+        clone.style.borderRadius = CLONE_RADIUS_START;
         clone.style.left = startRect.left + 'px';
         clone.style.top = startRect.top + 'px';
         clone.style.width = startRect.width + 'px';
@@ -982,7 +1090,7 @@
 
         lbState = {
             overlayEl: overlay, cloneEl: clone, imgEl: img,
-            isLivePhoto, originalContainer, originalImg: imgElement,
+            isLivePhoto, originalContainer, originalImg: imgElement, originalInstance,
             baseRect: { left: finalLeft, top: finalTop, width: finalW, height: finalH },
             scale: 1, translate: { x: 0, y: 0 },
             dragStart: { x: 0, y: 0 },
@@ -990,8 +1098,6 @@
             isAnimating: true,
             initialDistance: 0, initialScale: 1, lastTap: 0, tapTimer: null,
             resizeHandler: null, escHandler: null,
-            _cardRadius: cardRadius,
-            _lightboxRadius: lightboxRadius,
             _originalVideo: originalVideo,
             _videoParent: videoParent,
             _videoNext: videoNext,
@@ -1004,7 +1110,6 @@
 
         void clone.offsetWidth;
 
-        /* ★ 圆角也参与几何过渡：时长/easing 完全一致 */
         clone.style.transition = GEOM_TRANSITION;
 
         requestAnimationFrame(() => {
@@ -1014,7 +1119,7 @@
             clone.style.top = finalTop + 'px';
             clone.style.width = finalW + 'px';
             clone.style.height = finalH + 'px';
-            clone.style.borderRadius = lightboxRadius; // 圆角和几何一起平滑过渡
+            clone.style.borderRadius = CLONE_RADIUS_END;
         });
 
         const finishOpen = () => {
@@ -1024,14 +1129,12 @@
                 bindZoomEvents();
             } else if (originalVideo) {
                 if (originalInstance && originalInstance.loadFailed) return;
-                bindCloneVideo(clone, originalVideo);
+                bindCloneVideo(clone, originalVideo, originalInstance);
             }
         };
 
         const onTE = (e) => {
             if (e.target !== clone) return;
-            // left / top / width / height / border-radius 同时长同时结束，
-            // 只认第一个避免回调多次触发
             if (e.propertyName !== 'left') return;
             clone.removeEventListener('transitionend', onTE);
             finishOpen();
@@ -1073,7 +1176,7 @@
         if (!lbState) return;
         if (lbState.isAnimating && !skipAnimation) return;
 
-        const { overlayEl, cloneEl, originalImg, _cardRadius } = lbState;
+        const { overlayEl, cloneEl, originalImg } = lbState;
 
         if (lbState.resizeHandler) { window.removeEventListener('resize', lbState.resizeHandler); lbState.resizeHandler = null; }
         if (lbState.escHandler) { window.removeEventListener('keydown', lbState.escHandler); lbState.escHandler = null; }
@@ -1085,6 +1188,11 @@
         }
         if (lbState._originalVideo) {
             try { lbState._originalVideo.pause(); lbState._originalVideo.currentTime = 0; } catch (_) {}
+        }
+        if (lbState.originalInstance) {
+            lbState.originalInstance.isPlaying = false;
+            lbState.originalInstance.isEndingGracefully = false;
+            try { lbState.originalInstance.container.classList.remove('is-playing'); } catch (_) {}
         }
 
         if (skipAnimation || !overlayEl || !cloneEl || !originalImg) {
@@ -1103,14 +1211,13 @@
         cloneEl.style.transform = '';
         void cloneEl.offsetWidth;
 
-        /* ★ 关闭：几何 + 圆角一起飞回 */
         cloneEl.style.transition = GEOM_TRANSITION;
 
         cloneEl.style.left = startRect.left + 'px';
         cloneEl.style.top = startRect.top + 'px';
         cloneEl.style.width = startRect.width + 'px';
         cloneEl.style.height = startRect.height + 'px';
-        cloneEl.style.borderRadius = _cardRadius;
+        cloneEl.style.borderRadius = CLONE_RADIUS_START;
 
         const onEnd = (e) => {
             if (e.target !== cloneEl) return;
