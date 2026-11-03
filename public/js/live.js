@@ -1,9 +1,9 @@
 /*!
- * LivePhoto + Lightbox (v4 — GPU-only)
- * - 容器几何固定到终态，飞行动画只用 transform
- * - img/video 反向 scale 补偿，避免非等比拉伸
+ * LivePhoto + Lightbox (v6 — 正确视觉 + 性能优化)
+ * - width/height 过渡：容器边界从卡片"揭开"，图片 cover 到当前尺寸，不变形
+ * - 关键性能优化：动画期间移除 box-shadow，border-radius 简化
  * - 灯箱 CSS 全内置
- * - 视频 ended 自动回图片，不再卡最后一帧
+ * - 视频 ended 自动回图片
  */
 (function (global) {
     'use strict';
@@ -55,7 +55,7 @@
 .lightbox-overlay.lightbox-overlay.is-open .lightbox-blur,
 .lightbox-overlay.lightbox-overlay.is-open .lightbox-dim { opacity: 1; }
 
-/* clone：几何内联，只动 transform / opacity */
+/* Clone：无 box-shadow（JS 控制），无 will-change（JS 控制） */
 .lightbox-overlay.lightbox-overlay .lightbox-clone {
     position: fixed !important;
     margin: 0 !important;
@@ -63,15 +63,11 @@
     z-index: 10001 !important;
     opacity: 0;
     overflow: hidden !important;
-    border-radius: 12px;
     background: #1a1a1c !important;
     cursor: pointer;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55);
     border: 0 !important;
     outline: 0 !important;
-    transform-origin: center center;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
+    border-radius: 12px;
 }
 
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img,
@@ -88,8 +84,6 @@
     display: block !important;
     pointer-events: none !important;
     transform-origin: center center;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
     user-select: none !important;
     -webkit-user-select: none !important;
 }
@@ -137,6 +131,7 @@
     margin: 0 !important; padding: 0 !important;
     flex: 0 0 auto;
 }
+/* 只对 normal icon 强制 block，避免 disabled 图标也被显示 */
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-icon-svg:not(.live-photo-disabled-icon) {
     display: block; width: 100% !important; height: 100% !important;
 }
@@ -700,7 +695,6 @@
         const ox = br.left + br.width / 2, oy = br.top + br.height / 2;
         const tx = (cx - ox) * (1 - k) + k * lbState.translate.x;
         const ty = (cy - oy) * (1 - k) + k * lbState.translate.y;
-
         lbState.isZoomAnimating = true;
         const clone = lbState.cloneEl;
         clone.style.transition = 'transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1)';
@@ -880,14 +874,6 @@
         return o;
     }
 
-    function computeFlyParams(startRect, finalRect) {
-        const sx = startRect.width / finalRect.width;
-        const sy = startRect.height / finalRect.height;
-        const tx = (startRect.left + startRect.width / 2) - (finalRect.left + finalRect.width / 2);
-        const ty = (startRect.top + startRect.height / 2) - (finalRect.top + finalRect.height / 2);
-        return { sx, sy, tx, ty };
-    }
-
     function destroyOverlay() {
         if (!lbState) return;
         unbindZoomEvents();
@@ -908,7 +894,6 @@
             lbState._videoListeners = null;
         }
 
-        // video 归还原位：还原原始 inline style
         if (lbState.videoMoved && lbState.originalVideoParent && lbState.originalVideoParent.isConnected) {
             const v = lbState.cloneEl.querySelector('.live-photo-video');
             if (v && v.parentNode === lbState.cloneEl) {
@@ -952,7 +937,6 @@
         const { width: finalW, height: finalH } = getFinalSize(natW, natH, vw, vh);
         const finalLeft = (vw - finalW) / 2;
         const finalTop = (vh - finalH) / 2;
-        const finalRect = { left: finalLeft, top: finalTop, width: finalW, height: finalH };
 
         if (originalContainer && originalContainer._livePhotoInstance) {
             originalContainer._livePhotoInstance.suspend();
@@ -969,8 +953,7 @@
         img.draggable = false;
         clone.appendChild(img);
 
-        let video = null;
-        let videoMoved = false;
+        let video = null, videoMoved = false;
         let originalVideoParent = null, originalVideoNext = null, originalVideoInlineStyle = '';
         let badgeClone = null;
 
@@ -980,9 +963,6 @@
                 badgeClone = ob.cloneNode(true);
                 const ids = badgeClone.querySelectorAll('[id]');
                 for (let i = 0; i < ids.length; i++) ids[i].removeAttribute('id');
-                // 动画期间隐藏 badge（因为容器会被非等比缩放，badge 会变形）
-                badgeClone.style.opacity = '0';
-                badgeClone.style.transition = 'opacity 0.2s ease';
                 clone.appendChild(badgeClone);
             }
 
@@ -1013,31 +993,15 @@
             }
         }
 
-        // ★ 关键：容器布局到终态
-        clone.style.left = finalLeft + 'px';
-        clone.style.top = finalTop + 'px';
-        clone.style.width = finalW + 'px';
-        clone.style.height = finalH + 'px';
-        clone.style.borderRadius = (finalW < 400 ? 10 : 12) + 'px';
-        clone.style.transformOrigin = 'center center';
-        clone.style.willChange = 'transform, opacity';
-
-        // ★ 用 transform 倒推到卡片位置
-        const fly = computeFlyParams(startRect, finalRect);
-        clone.style.transform =
-            `translate3d(${fly.tx}px,${fly.ty}px,0) scale(${fly.sx},${fly.sy})`;
+        // ★ 初始 = 卡片位置/尺寸
+        clone.style.left = startRect.left + 'px';
+        clone.style.top = startRect.top + 'px';
+        clone.style.width = startRect.width + 'px';
+        clone.style.height = startRect.height + 'px';
         clone.style.opacity = '0';
-
-        // ★ 内部反向补偿，图片内容不拉伸
-        const innerInit = `scale(${1 / fly.sx},${1 / fly.sy})`;
-        img.style.transformOrigin = 'center center';
-        img.style.transform = innerInit;
-        img.style.willChange = 'transform';
-        if (video) {
-            video.style.transformOrigin = 'center center';
-            video.style.transform = innerInit;
-            video.style.willChange = 'transform';
-        }
+        clone.style.borderRadius = '6px';
+        // ★ 关键：动画期间无阴影，砍掉最大开销
+        clone.style.boxShadow = 'none';
 
         overlay.appendChild(clone);
         document.body.appendChild(overlay);
@@ -1055,7 +1019,7 @@
             overlayEl: overlay, cloneEl: clone, imgEl: img, videoEl: video,
             isLivePhoto, originalContainer, originalImg: imgElement,
             originalVideoParent, originalVideoNext, videoMoved, originalVideoInlineStyle,
-            baseRect: finalRect,
+            baseRect: { left: finalLeft, top: finalTop, width: finalW, height: finalH },
             scale: 1, translate: { x: 0, y: 0 },
             dragStart: { x: 0, y: 0 },
             isDragging: false, isResetting: false, isZoomAnimating: false,
@@ -1067,38 +1031,30 @@
 
         void clone.offsetWidth;
 
-        // ★ 只用 transform + opacity，全程合成层
+        // ★ 打开：几何过渡 + 快速淡入
         const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
-        clone.style.transition = `transform 0.42s ${easing}, opacity 0.15s ease`;
-        img.style.transition = `transform 0.42s ${easing}`;
-        if (video) video.style.transition = `transform 0.42s ${easing}`;
+        clone.style.transition =
+            `left 0.4s ${easing}, top 0.4s ${easing}, ` +
+            `width 0.4s ${easing}, height 0.4s ${easing}, ` +
+            `border-radius 0.25s ease, opacity 0.15s ease`;
 
         requestAnimationFrame(() => {
             if (!lbState) return;
             overlay.classList.add('is-open');
-            clone.style.transform = 'translate3d(0,0,0) scale(1,1)';
+            clone.style.left = finalLeft + 'px';
+            clone.style.top = finalTop + 'px';
+            clone.style.width = finalW + 'px';
+            clone.style.height = finalH + 'px';
+            clone.style.borderRadius = (finalW < 400 ? 10 : 12) + 'px';
             clone.style.opacity = '1';
-            img.style.transform = 'scale(1,1)';
-            if (video) video.style.transform = 'scale(1,1)';
         });
 
         const finishOpen = () => {
             if (!lbState || !lbState.isAnimating) return;
             lbState.isAnimating = false;
 
-            // 清理 inline transform，让 CSS 播放规则（scale 1.08）能生效
-            clone.style.willChange = '';
-            img.style.transform = '';
-            img.style.transition = '';
-            img.style.willChange = '';
-            if (video) {
-                video.style.transform = '';
-                video.style.transition = '';
-                video.style.willChange = '';
-            }
-
-            // badge 显现
-            if (badgeClone) badgeClone.style.opacity = '1';
+            // 动画结束，恢复 box-shadow
+            clone.style.boxShadow = '0 25px 60px rgba(0, 0, 0, 0.55)';
 
             if (!lbState.isLivePhoto) {
                 bindZoomEvents();
@@ -1132,7 +1088,7 @@
 
         const onTE = (e) => {
             if (e.target !== clone) return;
-            if (e.propertyName !== 'transform') return;
+            if (e.propertyName !== 'left') return;
             clone.removeEventListener('transitionend', onTE);
             finishOpen();
         };
@@ -1173,7 +1129,7 @@
         if (!lbState) return;
         if (lbState.isAnimating && !skipAnimation) return;
 
-        const { overlayEl, cloneEl, imgEl, videoEl, originalImg } = lbState;
+        const { overlayEl, cloneEl, videoEl, originalImg } = lbState;
 
         if (lbState.resizeHandler) { window.removeEventListener('resize', lbState.resizeHandler); lbState.resizeHandler = null; }
         if (lbState.escHandler) { window.removeEventListener('keydown', lbState.escHandler); lbState.escHandler = null; }
@@ -1195,29 +1151,26 @@
         overlayEl.classList.remove('is-open');
         cloneEl.classList.remove('is-playing', 'zoomed', 'dragging');
 
-        // 清除缩放/拖拽遗留的 transform
+        // 清掉可能残留的 zoom/pan transform
         cloneEl.style.transition = 'none';
-        cloneEl.style.transform = 'translate3d(0,0,0) scale(1,1)';
-        if (imgEl) imgEl.style.transform = '';
-        if (videoEl) videoEl.style.transform = '';
+        cloneEl.style.transform = '';
         void cloneEl.offsetWidth;
 
-        const fly = computeFlyParams(startRect, lbState.baseRect);
+        // ★ 关闭：先去阴影（省开销），再几何飞回
+        cloneEl.style.boxShadow = 'none';
+
         const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
-        cloneEl.style.willChange = 'transform, opacity';
-        if (imgEl) imgEl.style.willChange = 'transform';
-        if (videoEl) videoEl.style.willChange = 'transform';
+        cloneEl.style.transition =
+            `left 0.35s ${easing}, top 0.35s ${easing}, ` +
+            `width 0.35s ${easing}, height 0.35s ${easing}, ` +
+            `border-radius 0.25s ease, opacity 0.15s ease 0.22s`;
 
-        // ★ 反向补偿 + 延迟淡出
-        cloneEl.style.transition = `transform 0.38s ${easing}, opacity 0.15s ease 0.25s`;
-        if (imgEl) imgEl.style.transition = `transform 0.38s ${easing}`;
-        if (videoEl) videoEl.style.transition = `transform 0.38s ${easing}`;
-
-        cloneEl.style.transform =
-            `translate3d(${fly.tx}px,${fly.ty}px,0) scale(${fly.sx},${fly.sy})`;
+        cloneEl.style.left = startRect.left + 'px';
+        cloneEl.style.top = startRect.top + 'px';
+        cloneEl.style.width = startRect.width + 'px';
+        cloneEl.style.height = startRect.height + 'px';
+        cloneEl.style.borderRadius = '6px';
         cloneEl.style.opacity = '0';
-        if (imgEl) imgEl.style.transform = `scale(${1 / fly.sx},${1 / fly.sy})`;
-        if (videoEl) videoEl.style.transform = `scale(${1 / fly.sx},${1 / fly.sy})`;
 
         const onEnd = (e) => {
             if (e.target !== cloneEl) return;
