@@ -1,9 +1,10 @@
 /*!
- * LivePhoto + Lightbox (v7)
- * - 无 box-shadow（性能）
- * - 灯箱内完全复用原 LivePhotoInstance（长按延迟 / 进度环 / 优雅结束 / 复位时序一致）
+ * LivePhoto + Lightbox (v8)
+ * - 原卡片 DOM 完全不动（badge/video 不会消失，小图播放不受影响）
+ * - 灯箱内用 LivePhoto.init 在 clone 上建独立实例，行为与卡片一致
+ * - clone video 用 preload="none"：交互时才加载，缓存命中，视觉无感
  * - width/height 过渡：容器边界从卡片"揭开"，图片 cover 不变形
- * - 灯箱 CSS 全内置
+ * - 无 box-shadow
  */
 (function (global) {
     'use strict';
@@ -14,8 +15,7 @@
 .lightbox-overlay.lightbox-overlay {
     position: fixed !important;
     inset: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    margin: 0 !important; padding: 0 !important;
     z-index: 10000 !important;
     -webkit-tap-highlight-color: transparent !important;
     touch-action: none !important;
@@ -24,49 +24,39 @@
     overflow: hidden !important;
     box-sizing: border-box !important;
     background: transparent !important;
-    border: 0 !important;
-    outline: 0 !important;
+    border: 0 !important; outline: 0 !important;
 }
 .lightbox-overlay.lightbox-overlay *,
 .lightbox-overlay.lightbox-overlay *::before,
 .lightbox-overlay.lightbox-overlay *::after { box-sizing: border-box !important; }
 
 .lightbox-overlay.lightbox-overlay .lightbox-blur {
-    position: absolute !important;
-    inset: 0 !important;
+    position: absolute !important; inset: 0 !important;
     -webkit-backdrop-filter: blur(12px) !important;
     backdrop-filter: blur(12px) !important;
-    opacity: 0;
-    transition: opacity 0.35s ease;
+    opacity: 0; transition: opacity 0.35s ease;
     pointer-events: none !important;
-    will-change: opacity;
-    z-index: 1;
+    will-change: opacity; z-index: 1;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-dim {
-    position: absolute !important;
-    inset: 0 !important;
+    position: absolute !important; inset: 0 !important;
     background: rgba(0, 0, 0, 0.78) !important;
-    opacity: 0;
-    transition: opacity 0.35s ease;
+    opacity: 0; transition: opacity 0.35s ease;
     pointer-events: none !important;
-    will-change: opacity;
-    z-index: 2;
+    will-change: opacity; z-index: 2;
 }
 .lightbox-overlay.lightbox-overlay.is-open .lightbox-blur,
 .lightbox-overlay.lightbox-overlay.is-open .lightbox-dim { opacity: 1; }
 
-/* Clone：无 box-shadow */
 .lightbox-overlay.lightbox-overlay .lightbox-clone {
     position: fixed !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    margin: 0 !important; padding: 0 !important;
     z-index: 10001 !important;
     opacity: 0;
     overflow: hidden !important;
     background: #1a1a1c !important;
     cursor: pointer;
-    border: 0 !important;
-    outline: 0 !important;
+    border: 0 !important; outline: 0 !important;
     border-radius: 12px;
 }
 
@@ -88,26 +78,19 @@
     -webkit-user-select: none !important;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img {
-    z-index: 2 !important;
-    opacity: 1;
-    transform: scale(1);
+    z-index: 2 !important; opacity: 1;
     transition: opacity 0.3s linear, transform 0.3s linear;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video {
-    z-index: 1 !important;
-    transform: scale(1);
-    background-color: #000 !important;
+    z-index: 1 !important; background-color: #000 !important;
     transition: transform 0.3s linear;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone.is-playing .live-photo-img {
-    opacity: 0;
-    transform: scale(1.08);
+    opacity: 0; transform: scale(1.08);
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone.is-playing .live-photo-video {
     transform: scale(1.08);
 }
-.lightbox-overlay.lightbox-overlay .lightbox-clone.zoomed { cursor: grab; }
-.lightbox-overlay.lightbox-overlay .lightbox-clone.dragging { cursor: grabbing; }
 
 /* Badge */
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge {
@@ -145,12 +128,9 @@
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-text {
     margin-top: 1px !important;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
-    font-size: 12px !important;
-    font-weight: 500 !important;
-    line-height: 1 !important;
-    letter-spacing: 0.5px !important;
-    color: #000 !important;
-    text-transform: none !important;
+    font-size: 12px !important; font-weight: 500 !important;
+    line-height: 1 !important; letter-spacing: 0.5px !important;
+    color: #000 !important; text-transform: none !important;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-progress-ring {
     transition: stroke-dashoffset 0.2s linear;
@@ -167,11 +147,8 @@
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
     color: #fff !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    cursor: pointer;
-    opacity: 0;
+    display: flex !important; align-items: center !important; justify-content: center !important;
+    cursor: pointer; opacity: 0;
     transition: opacity 0.25s ease, transform 0.2s ease;
     padding: 0 !important; margin: 0 !important;
     -webkit-tap-highlight-color: transparent !important;
@@ -183,11 +160,9 @@
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn svg {
     width: 18px !important; height: 18px !important;
     display: block !important;
-    fill: none !important;
-    stroke: currentColor !important;
+    fill: none !important; stroke: currentColor !important;
     stroke-width: 2 !important;
-    stroke-linecap: round !important;
-    stroke-linejoin: round !important;
+    stroke-linecap: round !important; stroke-linejoin: round !important;
 }
 `;
 
@@ -293,19 +268,23 @@
                     '</svg>' +
                 '</div>' +
                 '<span class="live-photo-text">实况</span>';
+            // 避免 id 重复（clone 里也会生成一份）
+            const idNodes = badge.querySelectorAll('[id]');
+            for (let i = 0; i < idNodes.length; i++) idNodes[i].removeAttribute('id');
             this.container.appendChild(badge);
 
-            this.progressCircle = badge.querySelector('#progressCircle');
-            this.middleCircle = badge.querySelector('#middleCircle');
+            // 用 class 查找而非 id，避免全局 id 冲突
+            this.progressCircle = badge.querySelector('.live-photo-progress-ring');
+            this.middleCircle = badge.querySelector('.normal-icon circle');
             this.normalIcon = badge.querySelector('.normal-icon');
             this.disabledIcon = badge.querySelector('.live-photo-disabled-icon');
 
             if (isMobile) {
-                this.middleCircle.setAttribute('stroke-width', '3');
+                if (this.middleCircle) this.middleCircle.setAttribute('stroke-width', '3');
                 this.normalStrokeWidth = 4;
                 this.dotCount = 26;
             } else {
-                this.middleCircle.setAttribute('stroke-width', '5');
+                if (this.middleCircle) this.middleCircle.setAttribute('stroke-width', '5');
                 this.normalStrokeWidth = 8;
                 this.dotCount = 16;
             }
@@ -321,7 +300,8 @@
             v.setAttribute('x5-playsinline', '');
             v.muted = true;
             v.playsInline = true;
-            v.preload = 'auto';
+            // ★ 尊重已有 preload：clone 里是 "none"，不预加载
+            if (!v.hasAttribute('preload')) v.preload = 'auto';
             v.loop = false;
 
             this._videoHandlers.error = (e) => { console.warn('LivePhoto: video error', e); this._markAsFailed(); };
@@ -566,55 +546,23 @@
             if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
         }
 
-        /* 事件绑定：拆出 container 维度的绑定，方便灯箱切换 */
         _bindEvents() {
+            const c = this.container;
             this._containerHandlers.mouseenter = () => this.start();
             this._containerHandlers.mouseleave = () => this.stop();
             this._containerHandlers.touchstart = (e) => this._onTouchStart(e);
             this._containerHandlers.touchmove = (e) => this._onTouchMove(e);
             this._containerHandlers.touchend = () => this._onTouchEnd();
             this._containerHandlers.touchcancel = () => this._onTouchCancel();
-            this._bindContainerEvents();
-        }
-        _bindContainerEvents() {
-            const c = this.container;
-            const h = this._containerHandlers;
-            if (!c || !h.mouseenter) return;
-            c.addEventListener('mouseenter', h.mouseenter);
-            c.addEventListener('mouseleave', h.mouseleave);
-            c.addEventListener('touchstart', h.touchstart, { passive: true });
-            c.addEventListener('touchmove', h.touchmove, { passive: true });
-            c.addEventListener('touchend', h.touchend);
-            c.addEventListener('touchcancel', h.touchcancel);
-        }
-        _unbindContainerEvents() {
-            const c = this.container;
-            const h = this._containerHandlers;
-            if (!c || !h.mouseenter) return;
-            c.removeEventListener('mouseenter', h.mouseenter);
-            c.removeEventListener('mouseleave', h.mouseleave);
-            c.removeEventListener('touchstart', h.touchstart);
-            c.removeEventListener('touchmove', h.touchmove);
-            c.removeEventListener('touchend', h.touchend);
-            c.removeEventListener('touchcancel', h.touchcancel);
-        }
-
-        /**
-         * ★ 把实例"挂靠"到新的容器（灯箱 clone）上：
-         *   - 保留 badge / video 引用（它们跟着 DOM 移动）
-         *   - 切换 container 与 imgEl 引用
-         *   - 重新绑定容器事件
-         * 这样灯箱内的播放行为（长按延迟、进度环、endThreshold、复位时序）与原卡片完全一致。
-         */
-        swapContainer(newContainer, newImgEl) {
-            this._unbindContainerEvents();
-            this.container = newContainer;
-            if (newImgEl) this.imgEl = newImgEl;
-            this._bindContainerEvents();
+            c.addEventListener('mouseenter', this._containerHandlers.mouseenter);
+            c.addEventListener('mouseleave', this._containerHandlers.mouseleave);
+            c.addEventListener('touchstart', this._containerHandlers.touchstart, { passive: true });
+            c.addEventListener('touchmove', this._containerHandlers.touchmove, { passive: true });
+            c.addEventListener('touchend', this._containerHandlers.touchend);
+            c.addEventListener('touchcancel', this._containerHandlers.touchcancel);
         }
 
         destroy() {
-            this._unbindContainerEvents();
             this._clearLongPressTimer();
             this._stopAllFakeProgress();
             if (this.loadTimeout) { clearTimeout(this.loadTimeout); this.loadTimeout = null; }
@@ -632,10 +580,17 @@
             v.removeEventListener('progress', this._videoHandlers.progress);
             v.removeEventListener('timeupdate', this._videoHandlers.timeupdate);
             v.removeEventListener('ended', this._videoHandlers.ended);
-            const badge = this.container.querySelector('.live-photo-badge');
-            if (badge && badge.parentNode === this.container) badge.remove();
-            this.container.classList.remove('is-playing');
-            if (this.container._livePhotoInstance === this) this.container._livePhotoInstance = null;
+            const c = this.container;
+            c.removeEventListener('mouseenter', this._containerHandlers.mouseenter);
+            c.removeEventListener('mouseleave', this._containerHandlers.mouseleave);
+            c.removeEventListener('touchstart', this._containerHandlers.touchstart);
+            c.removeEventListener('touchmove', this._containerHandlers.touchmove);
+            c.removeEventListener('touchend', this._containerHandlers.touchend);
+            c.removeEventListener('touchcancel', this._containerHandlers.touchcancel);
+            const badge = c.querySelector('.live-photo-badge');
+            if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
+            c.classList.remove('is-playing');
+            if (c._livePhotoInstance === this) c._livePhotoInstance = null;
         }
     }
 
@@ -730,448 +685,4 @@
         clampTranslate();
         applyTransform();
         const done = () => {
-            clone.removeEventListener('transitionend', done);
-            clone.style.transition = '';
-            if (!lbState) return;
-            lbState.isZoomAnimating = false;
-            clone.classList.toggle('zoomed', lbState.scale > 1);
-        };
-        clone.addEventListener('transitionend', done);
-        setTimeout(() => { if (lbState && lbState.isZoomAnimating) done(); }, 350);
-    }
-    function resetTransform() {
-        if (!lbState || lbState.isResetting || lbState.isZoomAnimating) return;
-        if (lbState.isDragging) {
-            lbState.isDragging = false;
-            lbState.cloneEl.classList.remove('dragging');
-        }
-        if (lbState.scale === 1 && lbState.translate.x === 0 && lbState.translate.y === 0) return;
-        lbState.isResetting = true;
-        const clone = lbState.cloneEl;
-        clone.style.transition = 'transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1)';
-        lbState.scale = 1;
-        lbState.translate.x = 0;
-        lbState.translate.y = 0;
-        applyTransform();
-        const done = () => {
-            clone.removeEventListener('transitionend', done);
-            clone.style.transition = '';
-            if (!lbState) return;
-            lbState.isResetting = false;
-            clone.classList.remove('zoomed');
-        };
-        clone.addEventListener('transitionend', done);
-        setTimeout(() => { if (lbState && lbState.isResetting) done(); }, 350);
-    }
-
-    function onWheel(e) {
-        if (!lbState || lbState.isAnimating || lbState.isLivePhoto) return;
-        e.preventDefault();
-        zoomAtPoint(lbState.scale * (e.deltaY > 0 ? 0.9 : 1.1), e.clientX, e.clientY);
-    }
-    function onPointerDown(e) {
-        if (!lbState || lbState.isLivePhoto || lbState.scale === 1) return;
-        if (lbState.isAnimating || lbState.isResetting || lbState.isZoomAnimating) return;
-        e.preventDefault();
-        lbState.isDragging = true;
-        const p = e.touches ? e.touches[0] : e;
-        lbState.dragStart.x = p.clientX - lbState.translate.x;
-        lbState.dragStart.y = p.clientY - lbState.translate.y;
-        lbState.cloneEl.classList.add('dragging');
-    }
-    function onPointerMove(e) {
-        if (!lbState || !lbState.isDragging) return;
-        e.preventDefault();
-        const p = e.touches ? e.touches[0] : e;
-        lbState.translate.x = p.clientX - lbState.dragStart.x;
-        lbState.translate.y = p.clientY - lbState.dragStart.y;
-        clampTranslate();
-        applyTransform();
-    }
-    function onPointerUp() {
-        if (!lbState) return;
-        lbState.isDragging = false;
-        lbState.cloneEl.classList.remove('dragging');
-    }
-    function onTouchStart(e) {
-        if (!lbState || lbState.isResetting || lbState.isZoomAnimating) return;
-        if (e.touches.length === 2 && !lbState.isLivePhoto) {
-            if (lbState.tapTimer) { clearTimeout(lbState.tapTimer); lbState.tapTimer = null; }
-            lbState.lastTap = 0;
-            e.preventDefault();
-            const t1 = e.touches[0], t2 = e.touches[1];
-            lbState.initialDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-            lbState.initialScale = lbState.scale;
-        } else if (e.touches.length === 1) onPointerDown(e);
-    }
-    function onTouchMove(e) {
-        if (!lbState) return;
-        if (e.touches.length === 2 && lbState.initialDistance > 0 && !lbState.isLivePhoto) {
-            e.preventDefault();
-            const t1 = e.touches[0], t2 = e.touches[1];
-            const d = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-            let ns = lbState.initialScale * (d / lbState.initialDistance);
-            ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, ns));
-            if (ns !== lbState.scale) {
-                zoomAtPoint(ns, (t1.clientX + t2.clientX) / 2, (t1.clientY + t2.clientY) / 2);
-            }
-        } else if (e.touches.length === 1) onPointerMove(e);
-    }
-    function onTouchEnd(e) {
-        if (!lbState) return;
-        if (e.touches.length < 2) lbState.initialDistance = 0;
-        if (e.touches.length === 0) onPointerUp();
-    }
-    function onDoubleClick(e) {
-        if (!lbState || lbState.isLivePhoto) return;
-        e.preventDefault(); e.stopPropagation();
-        if (lbState.isResetting || lbState.isZoomAnimating) return;
-        if (lbState.scale === 1) animateZoomToPoint(Math.min(MAX_SCALE, 2.5), e.clientX, e.clientY);
-        else resetTransform();
-    }
-    function onTouchStartForDoubleTap(e) {
-        if (!lbState || lbState.isLivePhoto) return;
-        if (e.touches.length !== 1) return;
-        if (lbState.isResetting || lbState.isZoomAnimating) return;
-        const now = Date.now();
-        const dt = now - lbState.lastTap;
-        if (dt < 300 && dt > 0) {
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-            e.preventDefault();
-            if (lbState.isDragging) {
-                lbState.isDragging = false;
-                lbState.cloneEl.classList.remove('dragging');
-            }
-            const t = e.touches[0];
-            if (t) {
-                if (lbState.scale === 1) animateZoomToPoint(Math.min(MAX_SCALE, 2), t.clientX, t.clientY);
-                else resetTransform();
-            }
-            lbState.lastTap = 0;
-            if (lbState.tapTimer) { clearTimeout(lbState.tapTimer); lbState.tapTimer = null; }
-        } else {
-            lbState.lastTap = now;
-            if (lbState.tapTimer) clearTimeout(lbState.tapTimer);
-            lbState.tapTimer = setTimeout(() => { if (lbState) lbState.lastTap = 0; }, 300);
-        }
-    }
-    function bindZoomEvents() {
-        if (!lbState || lbState.isLivePhoto) return;
-        const c = lbState.cloneEl;
-        c.addEventListener('wheel', onWheel, { passive: false });
-        c.addEventListener('mousedown', onPointerDown);
-        window.addEventListener('mousemove', onPointerMove);
-        window.addEventListener('mouseup', onPointerUp);
-        c.addEventListener('touchstart', onTouchStartForDoubleTap, { passive: false });
-        c.addEventListener('touchstart', onTouchStart, { passive: false });
-        c.addEventListener('touchmove', onTouchMove, { passive: false });
-        c.addEventListener('touchend', onTouchEnd);
-        c.addEventListener('touchcancel', onTouchEnd);
-        c.addEventListener('dblclick', onDoubleClick);
-        c.style.cursor = 'pointer';
-    }
-    function unbindZoomEvents() {
-        if (!lbState || !lbState.cloneEl) return;
-        const c = lbState.cloneEl;
-        c.removeEventListener('wheel', onWheel);
-        c.removeEventListener('mousedown', onPointerDown);
-        window.removeEventListener('mousemove', onPointerMove);
-        window.removeEventListener('mouseup', onPointerUp);
-        c.removeEventListener('touchstart', onTouchStartForDoubleTap);
-        c.removeEventListener('touchstart', onTouchStart);
-        c.removeEventListener('touchmove', onTouchMove);
-        c.removeEventListener('touchend', onTouchEnd);
-        c.removeEventListener('touchcancel', onTouchEnd);
-        c.removeEventListener('dblclick', onDoubleClick);
-        if (lbState.tapTimer) { clearTimeout(lbState.tapTimer); lbState.tapTimer = null; }
-    }
-
-    function createOverlayDOM() {
-        const o = document.createElement('div');
-        o.className = 'lightbox-overlay';
-        o.innerHTML =
-            '<div class="lightbox-blur"></div>' +
-            '<div class="lightbox-dim"></div>' +
-            '<div class="lightbox-close-btn" role="button" aria-label="关闭">' +
-                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
-                    '<path d="M6 6l12 12M18 6L6 18"/>' +
-                '</svg>' +
-            '</div>';
-        return o;
-    }
-
-    function destroyOverlay() {
-        if (!lbState) return;
-        unbindZoomEvents();
-        if (lbState.resizeHandler) window.removeEventListener('resize', lbState.resizeHandler);
-        if (lbState.escHandler) window.removeEventListener('keydown', lbState.escHandler);
-
-        // ★ 先把 instance 挂靠回原容器（同时解绑 clone 上的事件，绑回原卡片）
-        if (lbState._instance && lbState._originalContainer) {
-            lbState._instance.swapContainer(lbState._originalContainer, lbState._originalImg);
-        }
-
-        // 再把 badge / video 从 clone 移回原容器
-        const clone = lbState.cloneEl;
-        if (lbState._originalContainer) {
-            const video = clone.querySelector('.live-photo-video');
-            if (video) {
-                try { video.pause(); video.currentTime = 0; } catch (_) {}
-                try { lbState._originalContainer.appendChild(video); } catch (_) {}
-            }
-            const badge = clone.querySelector('.live-photo-badge');
-            if (badge) {
-                try { lbState._originalContainer.appendChild(badge); } catch (_) {}
-            }
-        }
-
-        document.body.style.overflow = lbState._bodyOverflow || '';
-        document.body.style.paddingRight = lbState._bodyPaddingRight || '';
-        if (lbState.overlayEl && lbState.overlayEl.parentNode) {
-            lbState.overlayEl.parentNode.removeChild(lbState.overlayEl);
-        }
-        lbState = null;
-    }
-
-    function openLightbox(imgElement) {
-        if (lbState) return;
-        if (!imgElement || !imgElement.src) return;
-
-        const natW = imgElement.naturalWidth, natH = imgElement.naturalHeight;
-        if (!natW || !natH) {
-            const onLoad = () => {
-                imgElement.removeEventListener('load', onLoad);
-                openLightbox(imgElement);
-            };
-            imgElement.addEventListener('load', onLoad);
-            return;
-        }
-
-        const originalContainer = imgElement.closest('.live-photo');
-        const isLivePhoto = isLivePhotoImage(imgElement) && !!originalContainer;
-        const startRect = getRect(imgElement);
-        if (!startRect.width || !startRect.height) return;
-
-        const vw = window.innerWidth, vh = window.innerHeight;
-        const { width: finalW, height: finalH } = getFinalSize(natW, natH, vw, vh);
-        const finalLeft = (vw - finalW) / 2;
-        const finalTop = (vh - finalH) / 2;
-
-        // 拿到现有实例（若有）
-        const instance = originalContainer && originalContainer._livePhotoInstance;
-
-        // 停播 + 清长按定时器
-        if (instance) instance.suspend();
-
-        const overlay = createOverlayDOM();
-        const clone = document.createElement('div');
-        clone.className = 'lightbox-clone lightbox-clone-img';
-
-        const img = document.createElement('img');
-        img.className = 'live-photo-img';
-        img.src = imgElement.src;
-        img.alt = imgElement.alt || '';
-        img.draggable = false;
-        clone.appendChild(img);
-
-        // 记录原始 imgEl，关闭时恢复
-        const originalImgEl = instance ? instance.imgEl : null;
-
-        if (isLivePhoto && instance) {
-            // ★ 复用实例：直接把 badge + video 从原容器搬进 clone
-            const originalVideo = instance.videoEl;
-            const originalBadge = originalContainer.querySelector('.live-photo-badge');
-            if (originalVideo) {
-                try { originalVideo.pause(); } catch (_) {}
-                clone.appendChild(originalVideo);
-            }
-            if (originalBadge) clone.appendChild(originalBadge);
-
-            // ★ 把实例挂靠到 clone 上
-            instance.swapContainer(clone, img);
-        } else if (isLivePhoto) {
-            // 兜底：没拿到实例，构造一个一次性的 video（极少走这里）
-            const originalVideo = originalContainer.querySelector('.live-photo-video');
-            if (originalVideo) clone.appendChild(originalVideo);
-            const originalBadge = originalContainer.querySelector('.live-photo-badge');
-            if (originalBadge) clone.appendChild(originalBadge.cloneNode(true));
-        }
-
-        // 几何：初始 = 卡片位置，终态 = 灯箱位置
-        clone.style.left = startRect.left + 'px';
-        clone.style.top = startRect.top + 'px';
-        clone.style.width = startRect.width + 'px';
-        clone.style.height = startRect.height + 'px';
-        clone.style.opacity = '0';
-        clone.style.borderRadius = '6px';
-
-        overlay.appendChild(clone);
-        document.body.appendChild(overlay);
-
-        const bodyOverflow = document.body.style.overflow;
-        const bodyPaddingRight = document.body.style.paddingRight;
-        const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
-        document.body.style.overflow = 'hidden';
-        if (scrollbarW > 0) {
-            document.body.style.paddingRight =
-                (parseFloat(getComputedStyle(document.body).paddingRight) || 0) + scrollbarW + 'px';
-        }
-
-        lbState = {
-            overlayEl: overlay, cloneEl: clone, imgEl: img,
-            isLivePhoto, originalContainer, originalImg: imgElement,
-            baseRect: { left: finalLeft, top: finalTop, width: finalW, height: finalH },
-            scale: 1, translate: { x: 0, y: 0 },
-            dragStart: { x: 0, y: 0 },
-            isDragging: false, isResetting: false, isZoomAnimating: false,
-            isAnimating: true,
-            initialDistance: 0, initialScale: 1, lastTap: 0, tapTimer: null,
-            resizeHandler: null, escHandler: null,
-            _instance: instance || null,
-            _originalImg: originalImgEl || imgElement,
-            _bodyOverflow: bodyOverflow, _bodyPaddingRight: bodyPaddingRight
-        };
-
-        void clone.offsetWidth;
-
-        const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
-        clone.style.transition =
-            `left 0.4s ${easing}, top 0.4s ${easing}, ` +
-            `width 0.4s ${easing}, height 0.4s ${easing}, ` +
-            `border-radius 0.25s ease, opacity 0.15s ease`;
-
-        requestAnimationFrame(() => {
-            if (!lbState) return;
-            overlay.classList.add('is-open');
-            clone.style.left = finalLeft + 'px';
-            clone.style.top = finalTop + 'px';
-            clone.style.width = finalW + 'px';
-            clone.style.height = finalH + 'px';
-            clone.style.borderRadius = (finalW < 400 ? 10 : 12) + 'px';
-            clone.style.opacity = '1';
-        });
-
-        const finishOpen = () => {
-            if (!lbState || !lbState.isAnimating) return;
-            lbState.isAnimating = false;
-            // 非 livephoto 才需要绑定 zoom 事件
-            if (!lbState.isLivePhoto) bindZoomEvents();
-        };
-
-        const onTE = (e) => {
-            if (e.target !== clone) return;
-            if (e.propertyName !== 'left') return;
-            clone.removeEventListener('transitionend', onTE);
-            finishOpen();
-        };
-        clone.addEventListener('transitionend', onTE);
-        setTimeout(() => {
-            if (lbState && lbState.isAnimating) {
-                clone.removeEventListener('transitionend', onTE);
-                finishOpen();
-            }
-        }, 520);
-
-        overlay.addEventListener('click', (e) => {
-            if (!lbState || lbState.isAnimating) return;
-            if (e.target === overlay) { e.stopPropagation(); closeLightbox(false); }
-        });
-        const closeBtn = overlay.querySelector('.lightbox-close-btn');
-        closeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (!lbState || lbState.isAnimating) return;
-            closeLightbox(false);
-        });
-
-        lbState.escHandler = (e) => {
-            if (e.key === 'Escape' && lbState && !lbState.isAnimating) {
-                e.preventDefault();
-                closeLightbox(false);
-            }
-        };
-        window.addEventListener('keydown', lbState.escHandler);
-
-        lbState.resizeHandler = () => {
-            if (lbState && !lbState.isAnimating) closeLightbox(true);
-        };
-        window.addEventListener('resize', lbState.resizeHandler);
-    }
-
-    function closeLightbox(skipAnimation) {
-        if (!lbState) return;
-        if (lbState.isAnimating && !skipAnimation) return;
-
-        const { overlayEl, cloneEl, originalImg } = lbState;
-
-        if (lbState.resizeHandler) { window.removeEventListener('resize', lbState.resizeHandler); lbState.resizeHandler = null; }
-        if (lbState.escHandler) { window.removeEventListener('keydown', lbState.escHandler); lbState.escHandler = null; }
-        unbindZoomEvents();
-
-        // ★ 用实例自己的 suspend：清长按 Timer、停播、复位
-        if (lbState._instance) lbState._instance.suspend();
-
-        if (skipAnimation || !overlayEl || !cloneEl || !originalImg) {
-            destroyOverlay();
-            return;
-        }
-
-        const startRect = getRect(originalImg);
-        if (!startRect.width || !startRect.height) { destroyOverlay(); return; }
-
-        lbState.isAnimating = true;
-        overlayEl.classList.remove('is-open');
-        cloneEl.classList.remove('is-playing', 'zoomed', 'dragging');
-
-        // 清掉 zoom/pan 遗留的 transform
-        cloneEl.style.transition = 'none';
-        cloneEl.style.transform = '';
-        void cloneEl.offsetWidth;
-
-        const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
-        cloneEl.style.transition =
-            `left 0.35s ${easing}, top 0.35s ${easing}, ` +
-            `width 0.35s ${easing}, height 0.35s ${easing}, ` +
-            `border-radius 0.25s ease, opacity 0.15s ease 0.22s`;
-
-        cloneEl.style.left = startRect.left + 'px';
-        cloneEl.style.top = startRect.top + 'px';
-        cloneEl.style.width = startRect.width + 'px';
-        cloneEl.style.height = startRect.height + 'px';
-        cloneEl.style.borderRadius = '6px';
-        cloneEl.style.opacity = '0';
-
-        const onEnd = (e) => {
-            if (e.target !== cloneEl) return;
-            if (e.propertyName !== 'opacity') return;
-            cloneEl.removeEventListener('transitionend', onEnd);
-            destroyOverlay();
-        };
-        cloneEl.addEventListener('transitionend', onEnd);
-        setTimeout(() => { if (lbState) destroyOverlay(); }, 500);
-    }
-
-    function initLightbox(selector = '.lightbox-img') {
-        const handle = (e) => {
-            if (lbState) return;
-            const lp = e.target.closest('.live-photo');
-            if (lp) {
-                const img = lp.querySelector('.live-photo-img');
-                if (img) { e.preventDefault(); openLightbox(img); return; }
-            }
-            const img = e.target.closest(selector);
-            if (img && img.tagName === 'IMG') { e.preventDefault(); openLightbox(img); }
-        };
-        document.body.addEventListener('click', handle);
-        return function destroy() { document.body.removeEventListener('click', handle); };
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', addPaddingTopFallback);
-    } else {
-        addPaddingTopFallback();
-    }
-
-    global.LivePhoto = LivePhoto;
-    global.Lightbox = { init: initLightbox, open: openLightbox, close: closeLightbox };
-
-})(window);
+            clone.remove
