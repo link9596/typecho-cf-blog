@@ -1,15 +1,14 @@
 /*!
- * LivePhoto + Lightbox (v10)
- * - 移动原 video + 原 badge：状态实时继承（loading 进度 / 点阵 / disabled 全跟过来）
- * - 原 LivePhotoInstance 引用不变，badge 进度更新会自动反映到 clone
- * - clone 内独立播放控制，与原卡片行为一致（长按 150ms / 结束前 0.6s 优雅收尾）
+ * LivePhoto + Lightbox (v11)
+ * - 视频结束：暂停在最后一帧 → img 淡入 0.3s → 延迟 500ms 复位（对齐原版 _scheduleVideoReset）
+ * - clone 全程 opacity: 1，无淡入淡出 → badge 不闪
+ * - 移动原 video / badge：状态实时继承，零加载
  * - width/height 过渡：容器边界从卡片"揭开"
  * - 无 box-shadow
  */
 (function (global) {
     'use strict';
 
-    /* ========== Style Injection ========== */
     const STYLE_ID = 'livephoto-lightbox-style';
     const STYLE_CSS = `
 .lightbox-overlay.lightbox-overlay{position:fixed!important;inset:0!important;margin:0!important;padding:0!important;z-index:10000!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;user-select:none!important;-webkit-user-select:none!important;overflow:hidden!important;box-sizing:border-box!important;background:transparent!important;border:0!important;outline:0!important}
@@ -17,7 +16,7 @@
 .lightbox-overlay.lightbox-overlay .lightbox-blur{position:absolute!important;inset:0!important;-webkit-backdrop-filter:blur(12px)!important;backdrop-filter:blur(12px)!important;opacity:0;transition:opacity .35s ease;pointer-events:none!important;will-change:opacity;z-index:1}
 .lightbox-overlay.lightbox-overlay .lightbox-dim{position:absolute!important;inset:0!important;background:rgba(0,0,0,.78)!important;opacity:0;transition:opacity .35s ease;pointer-events:none!important;will-change:opacity;z-index:2}
 .lightbox-overlay.lightbox-overlay.is-open .lightbox-blur,.lightbox-overlay.lightbox-overlay.is-open .lightbox-dim{opacity:1}
-.lightbox-overlay.lightbox-overlay .lightbox-clone{position:fixed!important;margin:0!important;padding:0!important;z-index:10001!important;opacity:0;overflow:hidden!important;background:#1a1a1c!important;cursor:pointer;border:0!important;outline:0!important;border-radius:12px}
+.lightbox-overlay.lightbox-overlay .lightbox-clone{position:fixed!important;margin:0!important;padding:0!important;z-index:10001!important;opacity:1;overflow:hidden!important;background:#1a1a1c!important;cursor:pointer;border:0!important;outline:0!important;border-radius:12px}
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img,.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video{position:absolute!important;top:0!important;left:0!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;max-width:none!important;max-height:none!important;min-width:0!important;min-height:0!important;border:0!important;border-radius:inherit;object-fit:cover!important;display:block!important;pointer-events:none!important;transform-origin:center center;user-select:none!important;-webkit-user-select:none!important}
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img{z-index:2!important;opacity:1;transition:opacity .3s linear,transform .3s linear}
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video{z-index:1!important;background-color:#000!important;transition:transform .3s linear}
@@ -51,7 +50,6 @@
         document.addEventListener('DOMContentLoaded', injectStyles, { once: true });
     } else injectStyles();
 
-    /* ========== aspect-ratio 回退 ========== */
     function addPaddingTopFallback() {
         var cs = document.querySelectorAll('.live-photo');
         for (var i = 0; i < cs.length; i++) {
@@ -72,7 +70,6 @@
         }
     }
 
-    /* ========== LivePhotoInstance（与原版一致，未改动逻辑） ========== */
     class LivePhotoInstance {
         constructor(container, options = {}) {
             this.container = container;
@@ -482,7 +479,6 @@
         }
     }
 
-    /* ========== Lightbox ========== */
     const MIN_SCALE = 1, MAX_SCALE = 5;
     let lbState = null;
 
@@ -723,7 +719,6 @@
     function destroyOverlay() {
         if (!lbState) return;
 
-        // ★ 移回 badge（状态由原实例持续维护，移动回来即恢复）
         if (lbState._originalBadge && lbState._badgeParent && lbState._badgeParent.isConnected) {
             try {
                 if (lbState._badgeNext && lbState._badgeNext.parentNode === lbState._badgeParent) {
@@ -736,7 +731,6 @@
             }
         }
 
-        // 移回 video
         if (lbState._originalVideo && lbState._videoParent && lbState._videoParent.isConnected) {
             const v = lbState._originalVideo;
             try { v.pause(); v.currentTime = 0; } catch (_) {}
@@ -768,21 +762,29 @@
     }
 
     /**
-     * clone 内独立播放控制。与原 LivePhotoInstance 行为一致：
-     *  - 桌面 hover 播 / 移出停
-     *  - 移动端长按 150ms 播 / 松手停
-     *  - timeupdate 检测 endThreshold（0.6s）后优雅切回图片
+     * clone 内独立播放控制，行为与原 LivePhotoInstance 完全一致：
+     *  - 播放：currentTime 归零后 play()
+     *  - 停止（mouseleave / touchend / endThreshold / ended）：
+     *      pause 停在当前位置（保留最后一帧） → 移除 is-playing（img 0.3s 淡入）
+     *      → 延迟 500ms 才 currentTime = 0（用户不可见，对齐原版 _scheduleVideoReset）
      */
     function bindCloneVideo(clone, video) {
         if (!lbState) return;
         const END_THRESHOLD = 0.6;
         const LONG_PRESS_DELAY = 150;
+        const RESET_DELAY = 500;
         let longPressTimer = null;
+        let resetTimer = null;
         let wantPlay = false;
+
+        const clearReset = () => {
+            if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+        };
 
         const tryPlay = () => {
             if (!wantPlay) return;
-            if (video.currentTime >= (video.duration || 0) - 0.1) {
+            clearReset();
+            if (video.currentTime !== 0) {
                 try { video.currentTime = 0; } catch (_) {}
             }
             const p = video.play();
@@ -792,6 +794,7 @@
 
         const doPlay = () => {
             wantPlay = true;
+            clearReset();
             if (video.readyState < 2) {
                 if (video.readyState === 0) {
                     try { video.load(); } catch (_) {}
@@ -804,8 +807,20 @@
 
         const doStop = () => {
             wantPlay = false;
-            try { video.pause(); video.currentTime = 0; } catch (_) {}
+            clearReset();
+            // 暂停在当前位置，保留最后一帧
+            if (!video.paused) {
+                try { video.pause(); } catch (_) {}
+            }
+            // img 0.3s 淡入覆盖视频（保留视频的最后一帧在下面）
             clone.classList.remove('is-playing');
+            // 0.3s 过渡结束后再复位，用户不可见
+            resetTimer = setTimeout(() => {
+                resetTimer = null;
+                if (!wantPlay) {
+                    try { video.currentTime = 0; } catch (_) {}
+                }
+            }, RESET_DELAY);
         };
 
         const onEnter = () => doPlay();
@@ -844,6 +859,7 @@
 
         lbState._cleanupVideo = () => {
             clearTimeout(longPressTimer);
+            clearReset();
             clone.removeEventListener('mouseenter', onEnter);
             clone.removeEventListener('mouseleave', onLeave);
             clone.removeEventListener('touchstart', onTouchStart);
@@ -900,7 +916,6 @@
         let badgeNext = null;
 
         if (isLivePhoto) {
-            /* ---- 1. 移动原 video（零加载） ---- */
             originalVideo = originalContainer.querySelector('.live-photo-video');
             if (originalVideo) {
                 videoParent = originalVideo.parentNode;
@@ -909,12 +924,6 @@
                 clone.appendChild(originalVideo);
             }
 
-            /* ---- 2. 移动原 badge（不 clone）----
-               - 原实例的 progressCircle / normalIcon / disabledIcon 引用仍指向同一个 DOM
-               - 如果原卡片在加载中，进度环保持当前进度并继续更新
-               - 如果原卡片已加载完，显示点阵
-               - 如果原卡片加载失败，显示 disabled 图标
-               状态实时继承，不做假 badge */
             originalBadge = originalContainer.querySelector('.live-photo-badge');
             if (originalBadge) {
                 badgeParent = originalBadge.parentNode;
@@ -923,11 +932,12 @@
             }
         }
 
+        // ★ 初始 = 卡片位置，opacity 始终 1（不做淡入，避免 badge 闪）
         clone.style.left = startRect.left + 'px';
         clone.style.top = startRect.top + 'px';
         clone.style.width = startRect.width + 'px';
         clone.style.height = startRect.height + 'px';
-        clone.style.opacity = '0';
+        clone.style.opacity = '1';
         clone.style.borderRadius = '6px';
 
         overlay.appendChild(clone);
@@ -964,11 +974,12 @@
 
         void clone.offsetWidth;
 
+        // ★ 只过渡几何，不涉及 opacity
         const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
         clone.style.transition =
             `left 0.4s ${easing}, top 0.4s ${easing}, ` +
             `width 0.4s ${easing}, height 0.4s ${easing}, ` +
-            `border-radius 0.25s ease, opacity 0.15s ease`;
+            `border-radius 0.25s ease`;
 
         requestAnimationFrame(() => {
             if (!lbState) return;
@@ -978,7 +989,6 @@
             clone.style.width = finalW + 'px';
             clone.style.height = finalH + 'px';
             clone.style.borderRadius = (finalW < 400 ? 10 : 12) + 'px';
-            clone.style.opacity = '1';
         });
 
         const finishOpen = () => {
@@ -987,7 +997,6 @@
             if (!lbState.isLivePhoto) {
                 bindZoomEvents();
             } else if (originalVideo) {
-                // 原卡片加载失败 → 不绑定播放
                 if (originalInstance && originalInstance.loadFailed) return;
                 bindCloneVideo(clone, originalVideo);
             }
@@ -1066,22 +1075,22 @@
         cloneEl.style.transform = '';
         void cloneEl.offsetWidth;
 
+        // ★ 只过渡几何，无 opacity 变化
         const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
         cloneEl.style.transition =
             `left 0.35s ${easing}, top 0.35s ${easing}, ` +
             `width 0.35s ${easing}, height 0.35s ${easing}, ` +
-            `border-radius 0.25s ease, opacity 0.15s ease 0.22s`;
+            `border-radius 0.25s ease`;
 
         cloneEl.style.left = startRect.left + 'px';
         cloneEl.style.top = startRect.top + 'px';
         cloneEl.style.width = startRect.width + 'px';
         cloneEl.style.height = startRect.height + 'px';
         cloneEl.style.borderRadius = '6px';
-        cloneEl.style.opacity = '0';
 
         const onEnd = (e) => {
             if (e.target !== cloneEl) return;
-            if (e.propertyName !== 'opacity') return;
+            if (e.propertyName !== 'left') return;
             cloneEl.removeEventListener('transitionend', onEnd);
             destroyOverlay();
         };
