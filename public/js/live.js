@@ -1,9 +1,9 @@
 /*!
- * LivePhoto + Lightbox (v8)
- * - 原卡片 DOM 完全不动（badge/video 不会消失，小图播放不受影响）
- * - 灯箱内用 LivePhoto.init 在 clone 上建独立实例，行为与卡片一致
- * - clone video 用 preload="none"：交互时才加载，缓存命中，视觉无感
- * - width/height 过渡：容器边界从卡片"揭开"，图片 cover 不变形
+ * LivePhoto + Lightbox (v10)
+ * - 移动原 video + 原 badge：状态实时继承（loading 进度 / 点阵 / disabled 全跟过来）
+ * - 原 LivePhotoInstance 引用不变，badge 进度更新会自动反映到 clone
+ * - clone 内独立播放控制，与原卡片行为一致（长按 150ms / 结束前 0.6s 优雅收尾）
+ * - width/height 过渡：容器边界从卡片"揭开"
  * - 无 box-shadow
  */
 (function (global) {
@@ -12,158 +12,28 @@
     /* ========== Style Injection ========== */
     const STYLE_ID = 'livephoto-lightbox-style';
     const STYLE_CSS = `
-.lightbox-overlay.lightbox-overlay {
-    position: fixed !important;
-    inset: 0 !important;
-    margin: 0 !important; padding: 0 !important;
-    z-index: 10000 !important;
-    -webkit-tap-highlight-color: transparent !important;
-    touch-action: none !important;
-    user-select: none !important;
-    -webkit-user-select: none !important;
-    overflow: hidden !important;
-    box-sizing: border-box !important;
-    background: transparent !important;
-    border: 0 !important; outline: 0 !important;
-}
-.lightbox-overlay.lightbox-overlay *,
-.lightbox-overlay.lightbox-overlay *::before,
-.lightbox-overlay.lightbox-overlay *::after { box-sizing: border-box !important; }
-
-.lightbox-overlay.lightbox-overlay .lightbox-blur {
-    position: absolute !important; inset: 0 !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    backdrop-filter: blur(12px) !important;
-    opacity: 0; transition: opacity 0.35s ease;
-    pointer-events: none !important;
-    will-change: opacity; z-index: 1;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-dim {
-    position: absolute !important; inset: 0 !important;
-    background: rgba(0, 0, 0, 0.78) !important;
-    opacity: 0; transition: opacity 0.35s ease;
-    pointer-events: none !important;
-    will-change: opacity; z-index: 2;
-}
-.lightbox-overlay.lightbox-overlay.is-open .lightbox-blur,
-.lightbox-overlay.lightbox-overlay.is-open .lightbox-dim { opacity: 1; }
-
-.lightbox-overlay.lightbox-overlay .lightbox-clone {
-    position: fixed !important;
-    margin: 0 !important; padding: 0 !important;
-    z-index: 10001 !important;
-    opacity: 0;
-    overflow: hidden !important;
-    background: #1a1a1c !important;
-    cursor: pointer;
-    border: 0 !important; outline: 0 !important;
-    border-radius: 12px;
-}
-
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img,
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video {
-    position: absolute !important;
-    top: 0 !important; left: 0 !important;
-    width: 100% !important; height: 100% !important;
-    margin: 0 !important; padding: 0 !important;
-    max-width: none !important; max-height: none !important;
-    min-width: 0 !important; min-height: 0 !important;
-    border: 0 !important;
-    border-radius: inherit;
-    object-fit: cover !important;
-    display: block !important;
-    pointer-events: none !important;
-    transform-origin: center center;
-    user-select: none !important;
-    -webkit-user-select: none !important;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img {
-    z-index: 2 !important; opacity: 1;
-    transition: opacity 0.3s linear, transform 0.3s linear;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video {
-    z-index: 1 !important; background-color: #000 !important;
-    transition: transform 0.3s linear;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone.is-playing .live-photo-img {
-    opacity: 0; transform: scale(1.08);
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone.is-playing .live-photo-video {
-    transform: scale(1.08);
-}
-
-/* Badge */
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge {
-    position: absolute !important;
-    top: 12px !important; left: 12px !important;
-    z-index: 20 !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-    background: rgba(255, 255, 255, 0.5) !important;
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
-    padding: 2px 8px 2px 2px !important;
-    border-radius: 5px !important;
-    margin: 0 !important;
-    pointer-events: none !important;
-    box-shadow: none !important;
-    border: 0 !important;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-icon {
-    position: relative !important;
-    width: 20px !important; height: 20px !important;
-    margin: 0 !important; padding: 0 !important;
-    flex: 0 0 auto;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-icon-svg:not(.live-photo-disabled-icon) {
-    display: block; width: 100% !important; height: 100% !important;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-disabled-icon {
-    position: absolute !important;
-    top: 0 !important; left: 0 !important;
-    width: 100% !important; height: 100% !important;
-    display: none;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-text {
-    margin-top: 1px !important;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
-    font-size: 12px !important; font-weight: 500 !important;
-    line-height: 1 !important; letter-spacing: 0.5px !important;
-    color: #000 !important; text-transform: none !important;
-}
-.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-progress-ring {
-    transition: stroke-dashoffset 0.2s linear;
-}
-
-.lightbox-overlay.lightbox-overlay .lightbox-close-btn {
-    position: fixed !important;
-    top: 20px !important; right: 20px !important;
-    z-index: 10002 !important;
-    width: 40px !important; height: 40px !important;
-    border-radius: 50% !important;
-    background: rgba(0, 0, 0, 0.5) !important;
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    color: #fff !important;
-    display: flex !important; align-items: center !important; justify-content: center !important;
-    cursor: pointer; opacity: 0;
-    transition: opacity 0.25s ease, transform 0.2s ease;
-    padding: 0 !important; margin: 0 !important;
-    -webkit-tap-highlight-color: transparent !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-.lightbox-overlay.lightbox-overlay.is-open .lightbox-close-btn { opacity: 1; }
-.lightbox-overlay.lightbox-overlay .lightbox-close-btn:hover { transform: scale(1.08); }
-.lightbox-overlay.lightbox-overlay .lightbox-close-btn:active { transform: scale(0.96); }
-.lightbox-overlay.lightbox-overlay .lightbox-close-btn svg {
-    width: 18px !important; height: 18px !important;
-    display: block !important;
-    fill: none !important; stroke: currentColor !important;
-    stroke-width: 2 !important;
-    stroke-linecap: round !important; stroke-linejoin: round !important;
-}
+.lightbox-overlay.lightbox-overlay{position:fixed!important;inset:0!important;margin:0!important;padding:0!important;z-index:10000!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;user-select:none!important;-webkit-user-select:none!important;overflow:hidden!important;box-sizing:border-box!important;background:transparent!important;border:0!important;outline:0!important}
+.lightbox-overlay.lightbox-overlay *,.lightbox-overlay.lightbox-overlay *::before,.lightbox-overlay.lightbox-overlay *::after{box-sizing:border-box!important}
+.lightbox-overlay.lightbox-overlay .lightbox-blur{position:absolute!important;inset:0!important;-webkit-backdrop-filter:blur(12px)!important;backdrop-filter:blur(12px)!important;opacity:0;transition:opacity .35s ease;pointer-events:none!important;will-change:opacity;z-index:1}
+.lightbox-overlay.lightbox-overlay .lightbox-dim{position:absolute!important;inset:0!important;background:rgba(0,0,0,.78)!important;opacity:0;transition:opacity .35s ease;pointer-events:none!important;will-change:opacity;z-index:2}
+.lightbox-overlay.lightbox-overlay.is-open .lightbox-blur,.lightbox-overlay.lightbox-overlay.is-open .lightbox-dim{opacity:1}
+.lightbox-overlay.lightbox-overlay .lightbox-clone{position:fixed!important;margin:0!important;padding:0!important;z-index:10001!important;opacity:0;overflow:hidden!important;background:#1a1a1c!important;cursor:pointer;border:0!important;outline:0!important;border-radius:12px}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img,.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video{position:absolute!important;top:0!important;left:0!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;max-width:none!important;max-height:none!important;min-width:0!important;min-height:0!important;border:0!important;border-radius:inherit;object-fit:cover!important;display:block!important;pointer-events:none!important;transform-origin:center center;user-select:none!important;-webkit-user-select:none!important}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img{z-index:2!important;opacity:1;transition:opacity .3s linear,transform .3s linear}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video{z-index:1!important;background-color:#000!important;transition:transform .3s linear}
+.lightbox-overlay.lightbox-overlay .lightbox-clone.is-playing .live-photo-img{opacity:0;transform:scale(1.08)}
+.lightbox-overlay.lightbox-overlay .lightbox-clone.is-playing .live-photo-video{transform:scale(1.08)}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge{position:absolute!important;top:12px!important;left:12px!important;z-index:20!important;display:flex!important;align-items:center!important;gap:6px!important;background:rgba(255,255,255,.5)!important;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);padding:2px 8px 2px 2px!important;border-radius:5px!important;margin:0!important;pointer-events:none!important;box-shadow:none!important;border:0!important}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-icon{position:relative!important;width:20px!important;height:20px!important;margin:0!important;padding:0!important;flex:0 0 auto}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-icon-svg:not(.live-photo-disabled-icon){display:block;width:100%!important;height:100%!important}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-disabled-icon{position:absolute!important;top:0!important;left:0!important;width:100%!important;height:100%!important;display:none}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-text{margin-top:1px!important;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif!important;font-size:12px!important;font-weight:500!important;line-height:1!important;letter-spacing:.5px!important;color:#000!important;text-transform:none!important}
+.lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-progress-ring{transition:stroke-dashoffset .2s linear}
+.lightbox-overlay.lightbox-overlay .lightbox-close-btn{position:fixed!important;top:20px!important;right:20px!important;z-index:10002!important;width:40px!important;height:40px!important;border-radius:50%!important;background:rgba(0,0,0,.5)!important;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.1)!important;color:#fff!important;display:flex!important;align-items:center!important;justify-content:center!important;cursor:pointer;opacity:0;transition:opacity .25s ease,transform .2s ease;padding:0!important;margin:0!important;-webkit-tap-highlight-color:transparent!important;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+.lightbox-overlay.lightbox-overlay.is-open .lightbox-close-btn{opacity:1}
+.lightbox-overlay.lightbox-overlay .lightbox-close-btn:hover{transform:scale(1.08)}
+.lightbox-overlay.lightbox-overlay .lightbox-close-btn:active{transform:scale(.96)}
+.lightbox-overlay.lightbox-overlay .lightbox-close-btn svg{width:18px!important;height:18px!important;display:block!important;fill:none!important;stroke:currentColor!important;stroke-width:2!important;stroke-linecap:round!important;stroke-linejoin:round!important}
 `;
 
     function injectStyles() {
@@ -202,7 +72,7 @@
         }
     }
 
-    /* ========== LivePhotoInstance ========== */
+    /* ========== LivePhotoInstance（与原版一致，未改动逻辑） ========== */
     class LivePhotoInstance {
         constructor(container, options = {}) {
             this.container = container;
@@ -256,10 +126,10 @@
             badge.innerHTML =
                 '<div class="live-photo-icon">' +
                     '<svg class="live-photo-icon-svg normal-icon" viewBox="0 0 64 64" fill="none">' +
-                        '<circle id="middleCircle" cx="32" cy="32" r="16" stroke="rgba(0,0,0,0.6)" fill="none"/>' +
+                        '<circle cx="32" cy="32" r="16" stroke="rgba(0,0,0,0.6)" fill="none"/>' +
                         '<polygon points="39,32 28,24 28,40" fill="#000000"/>' +
                         '<g transform="rotate(-90 32 32)">' +
-                            '<circle id="progressCircle" class="live-photo-progress-ring" cx="32" cy="32" r="26" stroke="rgba(0,0,0,0.7)" fill="none" stroke-linecap="round"/>' +
+                            '<circle class="live-photo-progress-ring" cx="32" cy="32" r="26" stroke="rgba(0,0,0,0.7)" fill="none" stroke-linecap="round"/>' +
                         '</g>' +
                     '</svg>' +
                     '<svg class="live-photo-icon-svg live-photo-disabled-icon" viewBox="0 0 64 64" fill="none">' +
@@ -268,12 +138,8 @@
                     '</svg>' +
                 '</div>' +
                 '<span class="live-photo-text">实况</span>';
-            // 避免 id 重复（clone 里也会生成一份）
-            const idNodes = badge.querySelectorAll('[id]');
-            for (let i = 0; i < idNodes.length; i++) idNodes[i].removeAttribute('id');
             this.container.appendChild(badge);
 
-            // 用 class 查找而非 id，避免全局 id 冲突
             this.progressCircle = badge.querySelector('.live-photo-progress-ring');
             this.middleCircle = badge.querySelector('.normal-icon circle');
             this.normalIcon = badge.querySelector('.normal-icon');
@@ -300,7 +166,6 @@
             v.setAttribute('x5-playsinline', '');
             v.muted = true;
             v.playsInline = true;
-            // ★ 尊重已有 preload：clone 里是 "none"，不预加载
             if (!v.hasAttribute('preload')) v.preload = 'auto';
             v.loop = false;
 
@@ -857,14 +722,41 @@
 
     function destroyOverlay() {
         if (!lbState) return;
-        unbindZoomEvents();
+
+        // ★ 移回 badge（状态由原实例持续维护，移动回来即恢复）
+        if (lbState._originalBadge && lbState._badgeParent && lbState._badgeParent.isConnected) {
+            try {
+                if (lbState._badgeNext && lbState._badgeNext.parentNode === lbState._badgeParent) {
+                    lbState._badgeParent.insertBefore(lbState._originalBadge, lbState._badgeNext);
+                } else {
+                    lbState._badgeParent.appendChild(lbState._originalBadge);
+                }
+            } catch (_) {
+                try { lbState._badgeParent.appendChild(lbState._originalBadge); } catch (__) {}
+            }
+        }
+
+        // 移回 video
+        if (lbState._originalVideo && lbState._videoParent && lbState._videoParent.isConnected) {
+            const v = lbState._originalVideo;
+            try { v.pause(); v.currentTime = 0; } catch (_) {}
+            try {
+                if (lbState._videoNext && lbState._videoNext.parentNode === lbState._videoParent) {
+                    lbState._videoParent.insertBefore(v, lbState._videoNext);
+                } else {
+                    lbState._videoParent.appendChild(v);
+                }
+            } catch (_) {
+                try { lbState._videoParent.appendChild(v); } catch (__) {}
+            }
+        }
+
         if (lbState.resizeHandler) window.removeEventListener('resize', lbState.resizeHandler);
         if (lbState.escHandler) window.removeEventListener('keydown', lbState.escHandler);
-
-        // ★ 销毁 clone 内的实例（事件/timer/badge 全清）
-        if (lbState._cloneInstance) {
-            try { lbState._cloneInstance.destroy(); } catch (_) {}
-            lbState._cloneInstance = null;
+        unbindZoomEvents();
+        if (lbState._cleanupVideo) {
+            lbState._cleanupVideo();
+            lbState._cleanupVideo = null;
         }
 
         document.body.style.overflow = lbState._bodyOverflow || '';
@@ -873,6 +765,93 @@
             lbState.overlayEl.parentNode.removeChild(lbState.overlayEl);
         }
         lbState = null;
+    }
+
+    /**
+     * clone 内独立播放控制。与原 LivePhotoInstance 行为一致：
+     *  - 桌面 hover 播 / 移出停
+     *  - 移动端长按 150ms 播 / 松手停
+     *  - timeupdate 检测 endThreshold（0.6s）后优雅切回图片
+     */
+    function bindCloneVideo(clone, video) {
+        if (!lbState) return;
+        const END_THRESHOLD = 0.6;
+        const LONG_PRESS_DELAY = 150;
+        let longPressTimer = null;
+        let wantPlay = false;
+
+        const tryPlay = () => {
+            if (!wantPlay) return;
+            if (video.currentTime >= (video.duration || 0) - 0.1) {
+                try { video.currentTime = 0; } catch (_) {}
+            }
+            const p = video.play();
+            if (p && p.catch) p.catch(() => {});
+            clone.classList.add('is-playing');
+        };
+
+        const doPlay = () => {
+            wantPlay = true;
+            if (video.readyState < 2) {
+                if (video.readyState === 0) {
+                    try { video.load(); } catch (_) {}
+                }
+                video.addEventListener('canplay', tryPlay, { once: true });
+                return;
+            }
+            tryPlay();
+        };
+
+        const doStop = () => {
+            wantPlay = false;
+            try { video.pause(); video.currentTime = 0; } catch (_) {}
+            clone.classList.remove('is-playing');
+        };
+
+        const onEnter = () => doPlay();
+        const onLeave = () => doStop();
+
+        const onTouchStart = () => {
+            clearTimeout(longPressTimer);
+            longPressTimer = setTimeout(doPlay, LONG_PRESS_DELAY);
+        };
+        const onTouchEnd = () => {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+            doStop();
+        };
+        const onTouchCancel = () => {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+            doStop();
+        };
+
+        const onTimeUpdate = () => {
+            if (!clone.classList.contains('is-playing')) return;
+            const d = video.duration;
+            if (isNaN(d)) return;
+            if (d - video.currentTime <= END_THRESHOLD) doStop();
+        };
+        const onEnded = () => doStop();
+
+        clone.addEventListener('mouseenter', onEnter);
+        clone.addEventListener('mouseleave', onLeave);
+        clone.addEventListener('touchstart', onTouchStart, { passive: true });
+        clone.addEventListener('touchend', onTouchEnd);
+        clone.addEventListener('touchcancel', onTouchCancel);
+        video.addEventListener('timeupdate', onTimeUpdate);
+        video.addEventListener('ended', onEnded);
+
+        lbState._cleanupVideo = () => {
+            clearTimeout(longPressTimer);
+            clone.removeEventListener('mouseenter', onEnter);
+            clone.removeEventListener('mouseleave', onLeave);
+            clone.removeEventListener('touchstart', onTouchStart);
+            clone.removeEventListener('touchend', onTouchEnd);
+            clone.removeEventListener('touchcancel', onTouchCancel);
+            video.removeEventListener('timeupdate', onTimeUpdate);
+            video.removeEventListener('ended', onEnded);
+        };
     }
 
     function openLightbox(imgElement) {
@@ -899,10 +878,8 @@
         const finalLeft = (vw - finalW) / 2;
         const finalTop = (vh - finalH) / 2;
 
-        // ★ 原卡片实例：只做 suspend（停播 + 清定时器），不动 DOM
-        if (originalContainer && originalContainer._livePhotoInstance) {
-            originalContainer._livePhotoInstance.suspend();
-        }
+        const originalInstance = originalContainer ? originalContainer._livePhotoInstance : null;
+        if (originalInstance) originalInstance.suspend();
 
         const overlay = createOverlayDOM();
         const clone = document.createElement('div');
@@ -915,43 +892,37 @@
         img.draggable = false;
         clone.appendChild(img);
 
-        let cloneInstance = null;
+        let originalVideo = null;
+        let videoParent = null;
+        let videoNext = null;
+        let originalBadge = null;
+        let badgeParent = null;
+        let badgeNext = null;
 
         if (isLivePhoto) {
-            // ★ 创建独立的 video：preload="none"，只在交互时 load
-            const originalVideo = originalContainer.querySelector('.live-photo-video');
+            /* ---- 1. 移动原 video（零加载） ---- */
+            originalVideo = originalContainer.querySelector('.live-photo-video');
             if (originalVideo) {
-                const newVideo = document.createElement('video');
-                newVideo.className = 'live-photo-video';
-                newVideo.muted = true;
-                newVideo.playsInline = true;
-                newVideo.setAttribute('playsinline', '');
-                newVideo.setAttribute('webkit-playsinline', '');
-                newVideo.setAttribute('preload', 'none');
-                // 用原图作为 poster，加载前显示原图，视觉不闪
-                newVideo.poster = imgElement.src;
-                // 复制原 video 的 source
-                const src = originalVideo.src ||
-                    ((originalVideo.querySelector('source') || {}).src || '');
-                if (src) {
-                    const source = document.createElement('source');
-                    source.src = src;
-                    source.type = 'video/mp4';
-                    newVideo.appendChild(source);
-                }
-                clone.appendChild(newVideo);
+                videoParent = originalVideo.parentNode;
+                videoNext = originalVideo.nextSibling;
+                try { originalVideo.pause(); originalVideo.currentTime = 0; } catch (_) {}
+                clone.appendChild(originalVideo);
             }
 
-            // ★ 用 LivePhoto.init 在 clone 上建独立实例：
-            //    长按延迟、进度环、endThreshold 优雅收尾、复位时序与卡片完全一致
-            const opts = originalContainer._livePhotoInstance
-                ? originalContainer._livePhotoInstance.options
-                : {};
-            const instances = LivePhoto.init(clone, opts);
-            cloneInstance = instances[0] || null;
+            /* ---- 2. 移动原 badge（不 clone）----
+               - 原实例的 progressCircle / normalIcon / disabledIcon 引用仍指向同一个 DOM
+               - 如果原卡片在加载中，进度环保持当前进度并继续更新
+               - 如果原卡片已加载完，显示点阵
+               - 如果原卡片加载失败，显示 disabled 图标
+               状态实时继承，不做假 badge */
+            originalBadge = originalContainer.querySelector('.live-photo-badge');
+            if (originalBadge) {
+                badgeParent = originalBadge.parentNode;
+                badgeNext = originalBadge.nextSibling;
+                clone.appendChild(originalBadge);
+            }
         }
 
-        // 几何：初始 = 卡片位置
         clone.style.left = startRect.left + 'px';
         clone.style.top = startRect.top + 'px';
         clone.style.width = startRect.width + 'px';
@@ -981,7 +952,13 @@
             isAnimating: true,
             initialDistance: 0, initialScale: 1, lastTap: 0, tapTimer: null,
             resizeHandler: null, escHandler: null,
-            _cloneInstance: cloneInstance,
+            _originalVideo: originalVideo,
+            _videoParent: videoParent,
+            _videoNext: videoNext,
+            _originalBadge: originalBadge,
+            _badgeParent: badgeParent,
+            _badgeNext: badgeNext,
+            _cleanupVideo: null,
             _bodyOverflow: bodyOverflow, _bodyPaddingRight: bodyPaddingRight
         };
 
@@ -1007,7 +984,13 @@
         const finishOpen = () => {
             if (!lbState || !lbState.isAnimating) return;
             lbState.isAnimating = false;
-            if (!lbState.isLivePhoto) bindZoomEvents();
+            if (!lbState.isLivePhoto) {
+                bindZoomEvents();
+            } else if (originalVideo) {
+                // 原卡片加载失败 → 不绑定播放
+                if (originalInstance && originalInstance.loadFailed) return;
+                bindCloneVideo(clone, originalVideo);
+            }
         };
 
         const onTE = (e) => {
@@ -1059,7 +1042,13 @@
         if (lbState.escHandler) { window.removeEventListener('keydown', lbState.escHandler); lbState.escHandler = null; }
         unbindZoomEvents();
 
-        if (lbState._cloneInstance) lbState._cloneInstance.suspend();
+        if (lbState._cleanupVideo) {
+            lbState._cleanupVideo();
+            lbState._cleanupVideo = null;
+        }
+        if (lbState._originalVideo) {
+            try { lbState._originalVideo.pause(); lbState._originalVideo.currentTime = 0; } catch (_) {}
+        }
 
         if (skipAnimation || !overlayEl || !cloneEl || !originalImg) {
             destroyOverlay();
