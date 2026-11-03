@@ -163,11 +163,20 @@ const { siteTitle = '' } = Astro.props;
       var imgs = Array.prototype.slice.call(card.querySelectorAll('img'));
       var map = new Map();
       await Promise.all(imgs.map(async function (img) {
-        if (img._snowiSafeLoaded) return;
         var src = img.currentSrc || img.src || img.getAttribute('src');
+        
+        // 修复连续点击图片空白的问题：复用缓存
+        if (img._snowiSafeSrc === src && img._snowiSafeImg) {
+          map.set(img, img._snowiSafeImg);
+          return;
+        }
+        
         var safe = await loadSafeImage(src);
-        if (safe) map.set(img, safe);
-        img._snowiSafeLoaded = true;
+        if (safe) {
+          map.set(img, safe);
+          img._snowiSafeSrc = src;
+          img._snowiSafeImg = safe;
+        }
       }));
       return map;
     }
@@ -763,7 +772,6 @@ const { siteTitle = '' } = Astro.props;
       ctx.restore(); // 结束卡片内容裁剪
 
       // 5. 绘制右下角水印 (SVG雪花图标 + 文字)
-      // 【修改点】水印从 H + 23 再下移 3px 变为 H + 26
       var textY = H + 26; 
       var iconSize = 14;  
       ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
