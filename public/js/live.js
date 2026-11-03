@@ -2,8 +2,7 @@
  * LivePhoto + Lightbox (v8)
  * - 原卡片 DOM 完全不动（badge/video 不会消失，小图播放不受影响）
  * - 灯箱内用 LivePhoto.init 在 clone 上建独立实例，行为与卡片一致
- * - clone video 用 preload="none"：交互时才加载，缓存命中，视觉无感
- * - width/height 过渡：容器边界从卡片"揭开"，图片 cover 不变形
+ * - clone video 用 preload="none"：交互时才加载，缓存命中
  * - 无 box-shadow
  */
 (function (global) {
