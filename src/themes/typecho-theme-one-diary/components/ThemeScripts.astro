@@ -99,7 +99,7 @@ const { siteTitle = '' } = Astro.props;
      * ========================================================= */
 
     var SCALE = 3;          // 3倍图，提升分辨率
-    var PAD = 24;           // 外围留白宽度
+    var PAD = 18;           // 外围留白宽度
     var WATERMARK_H = 32;   // 底部留给水印的高度
 
     function roundRectPath(ctx, x, y, w, h, r) {
@@ -457,7 +457,7 @@ const { siteTitle = '' } = Astro.props;
         var BG_SCALE = 1.4, bdw = sw * BG_SCALE, bdh = sh * BG_SCALE;
         var bdx = sx - (bdw - sw) / 2, bdy = sy - (bdh - sh) / 2;
         ctx.save();
-        try { ctx.filter = 'blur(100px) saturate(1) brightness(0.4)'; } catch (e) {}
+        try { ctx.filter = 'blur(100px) saturate(1) brightness(0.6)'; } catch (e) {}
         try { ctx.drawImage(coverImg, bdx, bdy, bdw, bdh); } catch(e) {}
         ctx.filter = 'none'; ctx.restore();
 
