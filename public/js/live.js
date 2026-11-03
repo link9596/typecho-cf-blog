@@ -1,7 +1,8 @@
 /*!
- * LivePhoto + Lightbox (v14-fixed2)
- * - suspend 保留 fake progress 与进度圈 offset，badge 进度自然继承
- * - 灯箱内播放时才切换进度模式，进度圈按 currentTime/duration 走完
+ * LivePhoto + Lightbox (v14-fixed3)
+ * - 进度圈 = 视频网络加载进度（buffered / fake schedule），不是播放进度
+ * - suspend() 不动 fake progress / progressMode / 进度圈，badge 进度自然继承
+ * - 灯箱内进度圈继续由原实例的 progress 事件与 fake schedule 驱动
  * - play 失败重试，避免一次失败后无法播放
  * - 灯箱长按支持 touchmove 取消
  * - 圆角回归旧版：12px -> 10px
@@ -380,7 +381,7 @@
             if (!wasEnding) this._scheduleVideoReset();
         }
 
-        /* ★ 修复：只清理真正的 pending 状态，不动 fake progress / 进度圈，badge 进度自然继承 */
+        /* ★ 只清理 pending 状态，不动 fake progress / progressMode / 进度圈，badge 进度自然继承 */
         suspend() {
             this._clearLongPressTimer();
             this._cancelScheduledReset();
@@ -807,8 +808,8 @@
         lbState = null;
     }
 
-    /* ★ 修复：播放时才切换进度模式，进度圈按 currentTime/duration 走完；play 失败重试 */
-    function bindCloneVideo(clone, video, originalInstance) {
+    /* 灯箱内只控制播放/暂停与错误重试；进度圈由原实例的 progress/fake schedule 驱动 */
+    function bindCloneVideo(clone, video) {
         if (!lbState) return;
         const END_THRESHOLD = 0.6;
         const LONG_PRESS_DELAY = 150;
@@ -839,27 +840,6 @@
             }
         };
 
-        const restoreDotPattern = () => {
-            if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
-                try {
-                    originalInstance._stopAllFakeProgress();
-                    originalInstance.progressMode = false;
-                    originalInstance._setDotPattern();
-                } catch (_) {}
-            }
-        };
-
-        /* 进入播放：停掉 fake progress，切进度模式，保留当前 offset 以继承 */
-        const enterProgressMode = () => {
-            if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
-                try {
-                    originalInstance._stopAllFakeProgress();
-                    originalInstance.progressMode = false;
-                    originalInstance._enableProgressMode();
-                } catch (_) {}
-            }
-        };
-
         const cancelPlay = () => {
             isPlaying = false;
             cleanupPlaying();
@@ -874,7 +854,6 @@
             if (video.currentTime !== 0) {
                 try { video.currentTime = 0; } catch (_) {}
             }
-            enterProgressMode();
             const p = video.play();
             isPlaying = true;
             if (p && p.catch) {
@@ -943,7 +922,6 @@
                 resetTimer = null;
                 if (!wantPlay) {
                     try { video.currentTime = 0; } catch (_) {}
-                    restoreDotPattern();
                 }
             }, RESET_DELAY);
         };
@@ -983,12 +961,7 @@
         const onTimeUpdate = () => {
             if (!isPlaying) return;
             const d = video.duration;
-            if (isNaN(d) || d <= 0) return;
-            /* 进度圈按播放进度走，走完即恢复点状 */
-            if (originalInstance && originalInstance.progressCircle && !originalInstance.loadFailed) {
-                const p = Math.min(1, Math.max(0, video.currentTime / d));
-                try { originalInstance._setProgress(p); } catch (_) {}
-            }
+            if (isNaN(d)) return;
             if (d - video.currentTime <= END_THRESHOLD) doStop();
         };
         const onEnded = () => doStop();
@@ -1019,7 +992,6 @@
             clone.removeEventListener('touchcancel', onTouchCancel);
             video.removeEventListener('timeupdate', onTimeUpdate);
             video.removeEventListener('ended', onEnded);
-            restoreDotPattern();
         };
     }
 
@@ -1145,7 +1117,7 @@
                 bindZoomEvents();
             } else if (originalVideo) {
                 if (originalInstance && originalInstance.loadFailed) return;
-                bindCloneVideo(clone, originalVideo, originalInstance);
+                bindCloneVideo(clone, originalVideo);
             }
         };
 
