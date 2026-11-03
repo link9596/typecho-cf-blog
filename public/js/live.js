@@ -2,7 +2,8 @@
  * LivePhoto + Lightbox (v8)
  * - 原卡片 DOM 完全不动（badge/video 不会消失，小图播放不受影响）
  * - 灯箱内用 LivePhoto.init 在 clone 上建独立实例，行为与卡片一致
- * - clone video 用 preload="none"：交互时才加载，缓存命中
+ * - clone video 用 preload="none"：交互时才加载，缓存命中，视觉无感
+ * - width/height 过渡：容器边界从卡片"揭开"，图片 cover 不变形
  * - 无 box-shadow
  */
 (function (global) {
@@ -684,4 +685,443 @@
         clampTranslate();
         applyTransform();
         const done = () => {
-            clone.remove
+            clone.removeEventListener('transitionend', done);
+            clone.style.transition = '';
+            if (!lbState) return;
+            lbState.isZoomAnimating = false;
+            clone.classList.toggle('zoomed', lbState.scale > 1);
+        };
+        clone.addEventListener('transitionend', done);
+        setTimeout(() => { if (lbState && lbState.isZoomAnimating) done(); }, 350);
+    }
+    function resetTransform() {
+        if (!lbState || lbState.isResetting || lbState.isZoomAnimating) return;
+        if (lbState.isDragging) {
+            lbState.isDragging = false;
+            lbState.cloneEl.classList.remove('dragging');
+        }
+        if (lbState.scale === 1 && lbState.translate.x === 0 && lbState.translate.y === 0) return;
+        lbState.isResetting = true;
+        const clone = lbState.cloneEl;
+        clone.style.transition = 'transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1)';
+        lbState.scale = 1;
+        lbState.translate.x = 0;
+        lbState.translate.y = 0;
+        applyTransform();
+        const done = () => {
+            clone.removeEventListener('transitionend', done);
+            clone.style.transition = '';
+            if (!lbState) return;
+            lbState.isResetting = false;
+            clone.classList.remove('zoomed');
+        };
+        clone.addEventListener('transitionend', done);
+        setTimeout(() => { if (lbState && lbState.isResetting) done(); }, 350);
+    }
+
+    function onWheel(e) {
+        if (!lbState || lbState.isAnimating || lbState.isLivePhoto) return;
+        e.preventDefault();
+        zoomAtPoint(lbState.scale * (e.deltaY > 0 ? 0.9 : 1.1), e.clientX, e.clientY);
+    }
+    function onPointerDown(e) {
+        if (!lbState || lbState.isLivePhoto || lbState.scale === 1) return;
+        if (lbState.isAnimating || lbState.isResetting || lbState.isZoomAnimating) return;
+        e.preventDefault();
+        lbState.isDragging = true;
+        const p = e.touches ? e.touches[0] : e;
+        lbState.dragStart.x = p.clientX - lbState.translate.x;
+        lbState.dragStart.y = p.clientY - lbState.translate.y;
+        lbState.cloneEl.classList.add('dragging');
+    }
+    function onPointerMove(e) {
+        if (!lbState || !lbState.isDragging) return;
+        e.preventDefault();
+        const p = e.touches ? e.touches[0] : e;
+        lbState.translate.x = p.clientX - lbState.dragStart.x;
+        lbState.translate.y = p.clientY - lbState.dragStart.y;
+        clampTranslate();
+        applyTransform();
+    }
+    function onPointerUp() {
+        if (!lbState) return;
+        lbState.isDragging = false;
+        lbState.cloneEl.classList.remove('dragging');
+    }
+    function onTouchStart(e) {
+        if (!lbState || lbState.isResetting || lbState.isZoomAnimating) return;
+        if (e.touches.length === 2 && !lbState.isLivePhoto) {
+            if (lbState.tapTimer) { clearTimeout(lbState.tapTimer); lbState.tapTimer = null; }
+            lbState.lastTap = 0;
+            e.preventDefault();
+            const t1 = e.touches[0], t2 = e.touches[1];
+            lbState.initialDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            lbState.initialScale = lbState.scale;
+        } else if (e.touches.length === 1) onPointerDown(e);
+    }
+    function onTouchMove(e) {
+        if (!lbState) return;
+        if (e.touches.length === 2 && lbState.initialDistance > 0 && !lbState.isLivePhoto) {
+            e.preventDefault();
+            const t1 = e.touches[0], t2 = e.touches[1];
+            const d = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            let ns = lbState.initialScale * (d / lbState.initialDistance);
+            ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, ns));
+            if (ns !== lbState.scale) {
+                zoomAtPoint(ns, (t1.clientX + t2.clientX) / 2, (t1.clientY + t2.clientY) / 2);
+            }
+        } else if (e.touches.length === 1) onPointerMove(e);
+    }
+    function onTouchEnd(e) {
+        if (!lbState) return;
+        if (e.touches.length < 2) lbState.initialDistance = 0;
+        if (e.touches.length === 0) onPointerUp();
+    }
+    function onDoubleClick(e) {
+        if (!lbState || lbState.isLivePhoto) return;
+        e.preventDefault(); e.stopPropagation();
+        if (lbState.isResetting || lbState.isZoomAnimating) return;
+        if (lbState.scale === 1) animateZoomToPoint(Math.min(MAX_SCALE, 2.5), e.clientX, e.clientY);
+        else resetTransform();
+    }
+    function onTouchStartForDoubleTap(e) {
+        if (!lbState || lbState.isLivePhoto) return;
+        if (e.touches.length !== 1) return;
+        if (lbState.isResetting || lbState.isZoomAnimating) return;
+        const now = Date.now();
+        const dt = now - lbState.lastTap;
+        if (dt < 300 && dt > 0) {
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            e.preventDefault();
+            if (lbState.isDragging) {
+                lbState.isDragging = false;
+                lbState.cloneEl.classList.remove('dragging');
+            }
+            const t = e.touches[0];
+            if (t) {
+                if (lbState.scale === 1) animateZoomToPoint(Math.min(MAX_SCALE, 2), t.clientX, t.clientY);
+                else resetTransform();
+            }
+            lbState.lastTap = 0;
+            if (lbState.tapTimer) { clearTimeout(lbState.tapTimer); lbState.tapTimer = null; }
+        } else {
+            lbState.lastTap = now;
+            if (lbState.tapTimer) clearTimeout(lbState.tapTimer);
+            lbState.tapTimer = setTimeout(() => { if (lbState) lbState.lastTap = 0; }, 300);
+        }
+    }
+    function bindZoomEvents() {
+        if (!lbState || lbState.isLivePhoto) return;
+        const c = lbState.cloneEl;
+        c.addEventListener('wheel', onWheel, { passive: false });
+        c.addEventListener('mousedown', onPointerDown);
+        window.addEventListener('mousemove', onPointerMove);
+        window.addEventListener('mouseup', onPointerUp);
+        c.addEventListener('touchstart', onTouchStartForDoubleTap, { passive: false });
+        c.addEventListener('touchstart', onTouchStart, { passive: false });
+        c.addEventListener('touchmove', onTouchMove, { passive: false });
+        c.addEventListener('touchend', onTouchEnd);
+        c.addEventListener('touchcancel', onTouchEnd);
+        c.addEventListener('dblclick', onDoubleClick);
+        c.style.cursor = 'pointer';
+    }
+    function unbindZoomEvents() {
+        if (!lbState || !lbState.cloneEl) return;
+        const c = lbState.cloneEl;
+        c.removeEventListener('wheel', onWheel);
+        c.removeEventListener('mousedown', onPointerDown);
+        window.removeEventListener('mousemove', onPointerMove);
+        window.removeEventListener('mouseup', onPointerUp);
+        c.removeEventListener('touchstart', onTouchStartForDoubleTap);
+        c.removeEventListener('touchstart', onTouchStart);
+        c.removeEventListener('touchmove', onTouchMove);
+        c.removeEventListener('touchend', onTouchEnd);
+        c.removeEventListener('touchcancel', onTouchEnd);
+        c.removeEventListener('dblclick', onDoubleClick);
+        if (lbState.tapTimer) { clearTimeout(lbState.tapTimer); lbState.tapTimer = null; }
+    }
+
+    function createOverlayDOM() {
+        const o = document.createElement('div');
+        o.className = 'lightbox-overlay';
+        o.innerHTML =
+            '<div class="lightbox-blur"></div>' +
+            '<div class="lightbox-dim"></div>' +
+            '<div class="lightbox-close-btn" role="button" aria-label="关闭">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+                    '<path d="M6 6l12 12M18 6L6 18"/>' +
+                '</svg>' +
+            '</div>';
+        return o;
+    }
+
+    function destroyOverlay() {
+        if (!lbState) return;
+        unbindZoomEvents();
+        if (lbState.resizeHandler) window.removeEventListener('resize', lbState.resizeHandler);
+        if (lbState.escHandler) window.removeEventListener('keydown', lbState.escHandler);
+
+        // ★ 销毁 clone 内的实例（事件/timer/badge 全清）
+        if (lbState._cloneInstance) {
+            try { lbState._cloneInstance.destroy(); } catch (_) {}
+            lbState._cloneInstance = null;
+        }
+
+        document.body.style.overflow = lbState._bodyOverflow || '';
+        document.body.style.paddingRight = lbState._bodyPaddingRight || '';
+        if (lbState.overlayEl && lbState.overlayEl.parentNode) {
+            lbState.overlayEl.parentNode.removeChild(lbState.overlayEl);
+        }
+        lbState = null;
+    }
+
+    function openLightbox(imgElement) {
+        if (lbState) return;
+        if (!imgElement || !imgElement.src) return;
+
+        const natW = imgElement.naturalWidth, natH = imgElement.naturalHeight;
+        if (!natW || !natH) {
+            const onLoad = () => {
+                imgElement.removeEventListener('load', onLoad);
+                openLightbox(imgElement);
+            };
+            imgElement.addEventListener('load', onLoad);
+            return;
+        }
+
+        const originalContainer = imgElement.closest('.live-photo');
+        const isLivePhoto = isLivePhotoImage(imgElement) && !!originalContainer;
+        const startRect = getRect(imgElement);
+        if (!startRect.width || !startRect.height) return;
+
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const { width: finalW, height: finalH } = getFinalSize(natW, natH, vw, vh);
+        const finalLeft = (vw - finalW) / 2;
+        const finalTop = (vh - finalH) / 2;
+
+        // ★ 原卡片实例：只做 suspend（停播 + 清定时器），不动 DOM
+        if (originalContainer && originalContainer._livePhotoInstance) {
+            originalContainer._livePhotoInstance.suspend();
+        }
+
+        const overlay = createOverlayDOM();
+        const clone = document.createElement('div');
+        clone.className = 'lightbox-clone lightbox-clone-img';
+
+        const img = document.createElement('img');
+        img.className = 'live-photo-img';
+        img.src = imgElement.src;
+        img.alt = imgElement.alt || '';
+        img.draggable = false;
+        clone.appendChild(img);
+
+        let cloneInstance = null;
+
+        if (isLivePhoto) {
+            // ★ 创建独立的 video：preload="none"，只在交互时 load
+            const originalVideo = originalContainer.querySelector('.live-photo-video');
+            if (originalVideo) {
+                const newVideo = document.createElement('video');
+                newVideo.className = 'live-photo-video';
+                newVideo.muted = true;
+                newVideo.playsInline = true;
+                newVideo.setAttribute('playsinline', '');
+                newVideo.setAttribute('webkit-playsinline', '');
+                newVideo.setAttribute('preload', 'none');
+                // 用原图作为 poster，加载前显示原图，视觉不闪
+                newVideo.poster = imgElement.src;
+                // 复制原 video 的 source
+                const src = originalVideo.src ||
+                    ((originalVideo.querySelector('source') || {}).src || '');
+                if (src) {
+                    const source = document.createElement('source');
+                    source.src = src;
+                    source.type = 'video/mp4';
+                    newVideo.appendChild(source);
+                }
+                clone.appendChild(newVideo);
+            }
+
+            // ★ 用 LivePhoto.init 在 clone 上建独立实例：
+            //    长按延迟、进度环、endThreshold 优雅收尾、复位时序与卡片完全一致
+            const opts = originalContainer._livePhotoInstance
+                ? originalContainer._livePhotoInstance.options
+                : {};
+            const instances = LivePhoto.init(clone, opts);
+            cloneInstance = instances[0] || null;
+        }
+
+        // 几何：初始 = 卡片位置
+        clone.style.left = startRect.left + 'px';
+        clone.style.top = startRect.top + 'px';
+        clone.style.width = startRect.width + 'px';
+        clone.style.height = startRect.height + 'px';
+        clone.style.opacity = '0';
+        clone.style.borderRadius = '6px';
+
+        overlay.appendChild(clone);
+        document.body.appendChild(overlay);
+
+        const bodyOverflow = document.body.style.overflow;
+        const bodyPaddingRight = document.body.style.paddingRight;
+        const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
+        document.body.style.overflow = 'hidden';
+        if (scrollbarW > 0) {
+            document.body.style.paddingRight =
+                (parseFloat(getComputedStyle(document.body).paddingRight) || 0) + scrollbarW + 'px';
+        }
+
+        lbState = {
+            overlayEl: overlay, cloneEl: clone, imgEl: img,
+            isLivePhoto, originalContainer, originalImg: imgElement,
+            baseRect: { left: finalLeft, top: finalTop, width: finalW, height: finalH },
+            scale: 1, translate: { x: 0, y: 0 },
+            dragStart: { x: 0, y: 0 },
+            isDragging: false, isResetting: false, isZoomAnimating: false,
+            isAnimating: true,
+            initialDistance: 0, initialScale: 1, lastTap: 0, tapTimer: null,
+            resizeHandler: null, escHandler: null,
+            _cloneInstance: cloneInstance,
+            _bodyOverflow: bodyOverflow, _bodyPaddingRight: bodyPaddingRight
+        };
+
+        void clone.offsetWidth;
+
+        const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
+        clone.style.transition =
+            `left 0.4s ${easing}, top 0.4s ${easing}, ` +
+            `width 0.4s ${easing}, height 0.4s ${easing}, ` +
+            `border-radius 0.25s ease, opacity 0.15s ease`;
+
+        requestAnimationFrame(() => {
+            if (!lbState) return;
+            overlay.classList.add('is-open');
+            clone.style.left = finalLeft + 'px';
+            clone.style.top = finalTop + 'px';
+            clone.style.width = finalW + 'px';
+            clone.style.height = finalH + 'px';
+            clone.style.borderRadius = (finalW < 400 ? 10 : 12) + 'px';
+            clone.style.opacity = '1';
+        });
+
+        const finishOpen = () => {
+            if (!lbState || !lbState.isAnimating) return;
+            lbState.isAnimating = false;
+            if (!lbState.isLivePhoto) bindZoomEvents();
+        };
+
+        const onTE = (e) => {
+            if (e.target !== clone) return;
+            if (e.propertyName !== 'left') return;
+            clone.removeEventListener('transitionend', onTE);
+            finishOpen();
+        };
+        clone.addEventListener('transitionend', onTE);
+        setTimeout(() => {
+            if (lbState && lbState.isAnimating) {
+                clone.removeEventListener('transitionend', onTE);
+                finishOpen();
+            }
+        }, 520);
+
+        overlay.addEventListener('click', (e) => {
+            if (!lbState || lbState.isAnimating) return;
+            if (e.target === overlay) { e.stopPropagation(); closeLightbox(false); }
+        });
+        const closeBtn = overlay.querySelector('.lightbox-close-btn');
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!lbState || lbState.isAnimating) return;
+            closeLightbox(false);
+        });
+
+        lbState.escHandler = (e) => {
+            if (e.key === 'Escape' && lbState && !lbState.isAnimating) {
+                e.preventDefault();
+                closeLightbox(false);
+            }
+        };
+        window.addEventListener('keydown', lbState.escHandler);
+
+        lbState.resizeHandler = () => {
+            if (lbState && !lbState.isAnimating) closeLightbox(true);
+        };
+        window.addEventListener('resize', lbState.resizeHandler);
+    }
+
+    function closeLightbox(skipAnimation) {
+        if (!lbState) return;
+        if (lbState.isAnimating && !skipAnimation) return;
+
+        const { overlayEl, cloneEl, originalImg } = lbState;
+
+        if (lbState.resizeHandler) { window.removeEventListener('resize', lbState.resizeHandler); lbState.resizeHandler = null; }
+        if (lbState.escHandler) { window.removeEventListener('keydown', lbState.escHandler); lbState.escHandler = null; }
+        unbindZoomEvents();
+
+        if (lbState._cloneInstance) lbState._cloneInstance.suspend();
+
+        if (skipAnimation || !overlayEl || !cloneEl || !originalImg) {
+            destroyOverlay();
+            return;
+        }
+
+        const startRect = getRect(originalImg);
+        if (!startRect.width || !startRect.height) { destroyOverlay(); return; }
+
+        lbState.isAnimating = true;
+        overlayEl.classList.remove('is-open');
+        cloneEl.classList.remove('is-playing', 'zoomed', 'dragging');
+
+        cloneEl.style.transition = 'none';
+        cloneEl.style.transform = '';
+        void cloneEl.offsetWidth;
+
+        const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
+        cloneEl.style.transition =
+            `left 0.35s ${easing}, top 0.35s ${easing}, ` +
+            `width 0.35s ${easing}, height 0.35s ${easing}, ` +
+            `border-radius 0.25s ease, opacity 0.15s ease 0.22s`;
+
+        cloneEl.style.left = startRect.left + 'px';
+        cloneEl.style.top = startRect.top + 'px';
+        cloneEl.style.width = startRect.width + 'px';
+        cloneEl.style.height = startRect.height + 'px';
+        cloneEl.style.borderRadius = '6px';
+        cloneEl.style.opacity = '0';
+
+        const onEnd = (e) => {
+            if (e.target !== cloneEl) return;
+            if (e.propertyName !== 'opacity') return;
+            cloneEl.removeEventListener('transitionend', onEnd);
+            destroyOverlay();
+        };
+        cloneEl.addEventListener('transitionend', onEnd);
+        setTimeout(() => { if (lbState) destroyOverlay(); }, 500);
+    }
+
+    function initLightbox(selector = '.lightbox-img') {
+        const handle = (e) => {
+            if (lbState) return;
+            const lp = e.target.closest('.live-photo');
+            if (lp) {
+                const img = lp.querySelector('.live-photo-img');
+                if (img) { e.preventDefault(); openLightbox(img); return; }
+            }
+            const img = e.target.closest(selector);
+            if (img && img.tagName === 'IMG') { e.preventDefault(); openLightbox(img); }
+        };
+        document.body.addEventListener('click', handle);
+        return function destroy() { document.body.removeEventListener('click', handle); };
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', addPaddingTopFallback);
+    } else {
+        addPaddingTopFallback();
+    }
+
+    global.LivePhoto = LivePhoto;
+    global.Lightbox = { init: initLightbox, open: openLightbox, close: closeLightbox };
+
+})(window);
