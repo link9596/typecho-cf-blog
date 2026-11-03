@@ -1,16 +1,14 @@
 /*!
- * LivePhoto + Lightbox (v3)
- * - 几何属性过渡：容器从卡片边界"揭开"到最终位置，图片 object-fit 始终不变形
- * - badge display 冲突修复（disabled icon 不再强制显示）
- * - 灯箱内视频 ended 后自动回到图片
- * - Lightbox CSS 全内置，不依赖用户 CSS
+ * LivePhoto + Lightbox (v4 — GPU-only)
+ * - 容器几何固定到终态，飞行动画只用 transform
+ * - img/video 反向 scale 补偿，避免非等比拉伸
+ * - 灯箱 CSS 全内置
+ * - 视频 ended 自动回图片，不再卡最后一帧
  */
 (function (global) {
     'use strict';
 
-    /* =========================================================
-       Style Injection
-       ========================================================= */
+    /* ========== Style Injection ========== */
     const STYLE_ID = 'livephoto-lightbox-style';
     const STYLE_CSS = `
 .lightbox-overlay.lightbox-overlay {
@@ -31,15 +29,11 @@
 }
 .lightbox-overlay.lightbox-overlay *,
 .lightbox-overlay.lightbox-overlay *::before,
-.lightbox-overlay.lightbox-overlay *::after {
-    box-sizing: border-box !important;
-}
+.lightbox-overlay.lightbox-overlay *::after { box-sizing: border-box !important; }
 
 .lightbox-overlay.lightbox-overlay .lightbox-blur {
     position: absolute !important;
     inset: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
     -webkit-backdrop-filter: blur(12px) !important;
     backdrop-filter: blur(12px) !important;
     opacity: 0;
@@ -47,13 +41,10 @@
     pointer-events: none !important;
     will-change: opacity;
     z-index: 1;
-    background: transparent !important;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-dim {
     position: absolute !important;
     inset: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
     background: rgba(0, 0, 0, 0.78) !important;
     opacity: 0;
     transition: opacity 0.35s ease;
@@ -62,11 +53,9 @@
     z-index: 2;
 }
 .lightbox-overlay.lightbox-overlay.is-open .lightbox-blur,
-.lightbox-overlay.lightbox-overlay.is-open .lightbox-dim {
-    opacity: 1;
-}
+.lightbox-overlay.lightbox-overlay.is-open .lightbox-dim { opacity: 1; }
 
-/* Clone：几何属性由 JS 内联设置，CSS 只做基础样式 */
+/* clone：几何内联，只动 transform / opacity */
 .lightbox-overlay.lightbox-overlay .lightbox-clone {
     position: fixed !important;
     margin: 0 !important;
@@ -80,43 +69,37 @@
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55);
     border: 0 !important;
     outline: 0 !important;
-    will-change: left, top, width, height, opacity;
-    transform: translate3d(0,0,0) scale(1);
     transform-origin: center center;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img,
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video {
     position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    max-width: none !important;
-    max-height: none !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
+    top: 0 !important; left: 0 !important;
+    width: 100% !important; height: 100% !important;
+    margin: 0 !important; padding: 0 !important;
+    max-width: none !important; max-height: none !important;
+    min-width: 0 !important; min-height: 0 !important;
     border: 0 !important;
     border-radius: inherit;
     object-fit: cover !important;
     display: block !important;
     pointer-events: none !important;
     transform-origin: center center;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
     user-select: none !important;
     -webkit-user-select: none !important;
 }
-
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-img {
     z-index: 2 !important;
     opacity: 1;
-    transform: scale(1);
     transition: opacity 0.3s linear, transform 0.3s linear;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-video {
     z-index: 1 !important;
-    transform: scale(1);
     background-color: #000 !important;
     transition: transform 0.3s linear;
 }
@@ -130,11 +113,10 @@
 .lightbox-overlay.lightbox-overlay .lightbox-clone.zoomed { cursor: grab; }
 .lightbox-overlay.lightbox-overlay .lightbox-clone.dragging { cursor: grabbing; }
 
-/* ===== Badge ===== */
+/* Badge */
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge {
     position: absolute !important;
-    top: 12px !important;
-    left: 12px !important;
+    top: 12px !important; left: 12px !important;
     z-index: 20 !important;
     display: flex !important;
     align-items: center !important;
@@ -151,24 +133,17 @@
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-icon {
     position: relative !important;
-    width: 20px !important;
-    height: 20px !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    width: 20px !important; height: 20px !important;
+    margin: 0 !important; padding: 0 !important;
     flex: 0 0 auto;
 }
-/* ★ 只对 normal 图标强制 block；disabled 图标不强制，让内联样式/原 CSS 决定 */
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-icon-svg:not(.live-photo-disabled-icon) {
-    display: block;
-    width: 100% !important;
-    height: 100% !important;
+    display: block; width: 100% !important; height: 100% !important;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-disabled-icon {
     position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
+    top: 0 !important; left: 0 !important;
+    width: 100% !important; height: 100% !important;
     display: none;
 }
 .lightbox-overlay.lightbox-overlay .lightbox-clone .live-photo-badge .live-photo-text {
@@ -187,11 +162,9 @@
 
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn {
     position: fixed !important;
-    top: 20px !important;
-    right: 20px !important;
+    top: 20px !important; right: 20px !important;
     z-index: 10002 !important;
-    width: 40px !important;
-    height: 40px !important;
+    width: 40px !important; height: 40px !important;
     border-radius: 50% !important;
     background: rgba(0, 0, 0, 0.5) !important;
     -webkit-backdrop-filter: blur(8px);
@@ -204,8 +177,7 @@
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.25s ease, transform 0.2s ease;
-    padding: 0 !important;
-    margin: 0 !important;
+    padding: 0 !important; margin: 0 !important;
     -webkit-tap-highlight-color: transparent !important;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
@@ -213,8 +185,7 @@
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn:hover { transform: scale(1.08); }
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn:active { transform: scale(0.96); }
 .lightbox-overlay.lightbox-overlay .lightbox-close-btn svg {
-    width: 18px !important;
-    height: 18px !important;
+    width: 18px !important; height: 18px !important;
     display: block !important;
     fill: none !important;
     stroke: currentColor !important;
@@ -234,27 +205,23 @@
         style.textContent = STYLE_CSS;
         head.appendChild(style);
     }
-
     if (document.head) injectStyles();
     else if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', injectStyles, { once: true });
     } else injectStyles();
 
-    /* =========================================================
-       0. aspect-ratio → padding-top fallback
-       ========================================================= */
+    /* ========== aspect-ratio 回退 ========== */
     function addPaddingTopFallback() {
-        var containers = document.querySelectorAll('.live-photo');
-        for (var i = 0; i < containers.length; i++) {
-            var c = containers[i];
+        var cs = document.querySelectorAll('.live-photo');
+        for (var i = 0; i < cs.length; i++) {
+            var c = cs[i];
             if (c._paddingFallbackAdded) continue;
-            var style = c.getAttribute('style') || '';
-            var m = style.match(/aspect-ratio:\s*([\d\.]+\s*\/\s*[\d\.]+)/i);
+            var s = c.getAttribute('style') || '';
+            var m = s.match(/aspect-ratio:\s*([\d\.]+\s*\/\s*[\d\.]+)/i);
             if (m) {
-                var parts = m[1].split('/');
-                var w = parseFloat(parts[0]), h = parseFloat(parts[1]);
-                if (!isNaN(w) && !isNaN(h) && w > 0 && style.indexOf('padding-top') === -1) {
-                    var ns = style.trim();
+                var p = m[1].split('/'), w = parseFloat(p[0]), h = parseFloat(p[1]);
+                if (!isNaN(w) && !isNaN(h) && w > 0 && s.indexOf('padding-top') === -1) {
+                    var ns = s.trim();
                     if (ns && !ns.endsWith(';')) ns += ';';
                     ns += ' padding-top: ' + ((h / w) * 100) + '%;';
                     c.setAttribute('style', ns);
@@ -264,29 +231,23 @@
         }
     }
 
-    /* =========================================================
-       1. LivePhotoInstance
-       ========================================================= */
+    /* ========== LivePhotoInstance ========== */
     class LivePhotoInstance {
         constructor(container, options = {}) {
             this.container = container;
             this.imgEl = container.querySelector('.live-photo-img');
             this.videoEl = container.querySelector('.live-photo-video');
-            if (!this.imgEl || !this.videoEl) {
-                throw new Error('LivePhoto Error: .live-photo-img or .live-photo-video not found');
-            }
+            if (!this.imgEl || !this.videoEl) throw new Error('LivePhoto Error: missing img/video');
+
             this.options = Object.assign({
-                longPressDelay: 150,
-                endThreshold: 0.6,
-                moveCancelThreshold: 10,
+                longPressDelay: 150, endThreshold: 0.6, moveCancelThreshold: 10,
                 fakeSchedule: [
                     { delay: 200, target: 0.1 }, { delay: 500, target: 0.2 },
                     { delay: 600, target: 0.25 }, { delay: 800, target: 0.3 },
                     { delay: 1000, target: 0.4 }, { delay: 2100, target: 0.55 },
                     { delay: 3500, target: 0.65 }, { delay: 8800, target: 0.8 }
                 ],
-                progressStrokeWidth: 4,
-                timeoutMs: 20000
+                progressStrokeWidth: 4, timeoutMs: 20000
             }, options);
 
             this._resetOnTransitionEnd = null;
@@ -294,12 +255,10 @@
             this._onResetDone = null;
             this._playingHandler = null;
             this._playingTimeout = null;
-
             this.isPlaying = false;
             this.longPressTimer = null;
             this.isEndingGracefully = false;
-            this.touchStartX = 0;
-            this.touchStartY = 0;
+            this.touchStartX = 0; this.touchStartY = 0;
             this.progressMode = false;
             this.fakeSteps = null;
             this.loadFailed = false;
@@ -321,7 +280,6 @@
         _initBadge() {
             const isMobile = this._detectMobile();
             this.isMobile = isMobile;
-
             const badge = document.createElement('div');
             badge.className = 'live-photo-badge';
             badge.innerHTML =
@@ -346,7 +304,7 @@
             this.normalIcon = badge.querySelector('.normal-icon');
             this.disabledIcon = badge.querySelector('.live-photo-disabled-icon');
 
-            if (this.isMobile) {
+            if (isMobile) {
                 this.middleCircle.setAttribute('stroke-width', '3');
                 this.normalStrokeWidth = 4;
                 this.dotCount = 26;
@@ -370,10 +328,7 @@
             v.preload = 'auto';
             v.loop = false;
 
-            this._videoHandlers.error = (e) => {
-                console.warn('LivePhoto: video error', e);
-                this._markAsFailed();
-            };
+            this._videoHandlers.error = (e) => { console.warn('LivePhoto: video error', e); this._markAsFailed(); };
             this._videoHandlers.success = () => {
                 if (this.loadTimeout) { clearTimeout(this.loadTimeout); this.loadTimeout = null; }
                 if (this.progressMode && !this.loadFailed) {
@@ -432,12 +387,10 @@
             if (b.length === 0) return 0;
             return Math.min(1, Math.max(0, b.end(b.length - 1) / v.duration));
         }
-
-        _setProgress(percent) {
+        _setProgress(p) {
             if (!this.progressCircle || this.loadFailed) return;
-            this.progressCircle.style.strokeDashoffset = this.circumference * (1 - percent);
+            this.progressCircle.style.strokeDashoffset = this.circumference * (1 - p);
         }
-
         _setDotPattern() {
             if (!this.progressCircle || this.loadFailed) return;
             this.progressCircle.setAttribute('stroke-dasharray', `0 ${this.dotSpacing}`);
@@ -445,34 +398,33 @@
             this.progressCircle.setAttribute('stroke', 'rgba(0,0,0,0.7)');
             this.progressCircle.setAttribute('stroke-width', this.normalStrokeWidth);
         }
-
         _enableProgressMode() {
             if (!this.progressCircle || this.loadFailed) return;
             this.progressCircle.setAttribute('stroke-dasharray', `${this.circumference}`);
             this.progressCircle.setAttribute('stroke', '#000000');
             this.progressCircle.setAttribute('stroke-width', this.options.progressStrokeWidth);
         }
-
         _onRealProgress() {
             if (!this.progressMode || this.loadFailed) return;
             const real = this._getRealBufferedPercent();
             if (this.fakeSteps && this.fakeSteps.length > 0) {
                 let cur = parseFloat(this.progressCircle.style.strokeDashoffset);
                 if (isNaN(cur)) cur = this.circumference;
-                let cp = (this.circumference - cur) / this.circumference;
-                if (real > cp) { this._stopAllFakeProgress(); this._setProgress(real); }
+                if (real > (this.circumference - cur) / this.circumference) {
+                    this._stopAllFakeProgress();
+                    this._setProgress(real);
+                }
             } else this._setProgress(real);
         }
-
         _startFakeProgress() {
             if (this.fakeSteps && this.fakeSteps.length > 0) return;
             if (this.loadFailed) return;
             this._enableProgressMode();
             this._setProgress(0);
-            const schedule = this.options.fakeSchedule;
+            const s = this.options.fakeSchedule;
             this.fakeSteps = [];
-            for (let i = 0; i < schedule.length; i++) {
-                const step = schedule[i];
+            for (let i = 0; i < s.length; i++) {
+                const step = s[i];
                 const timer = setTimeout(() => {
                     if (this.loadFailed) return;
                     const real = this._getRealBufferedPercent();
@@ -487,32 +439,24 @@
                 this.fakeSteps.push(timer);
             }
         }
-
         _stopAllFakeProgress() {
             if (this.fakeSteps) {
                 for (const t of this.fakeSteps) clearTimeout(t);
                 this.fakeSteps = null;
             }
         }
-
         _preloadVideo() {
             if (this.loadFailed) return;
             if (this.videoEl.readyState >= 2) return;
-            if (!this.progressMode) {
-                this.progressMode = true;
-                this._startFakeProgress();
-            }
-            if (this.videoEl.readyState === 0) {
-                this.videoEl.load();
-                this._startLoadTimeout();
-            }
+            if (!this.progressMode) { this.progressMode = true; this._startFakeProgress(); }
+            if (this.videoEl.readyState === 0) { this.videoEl.load(); this._startLoadTimeout(); }
         }
 
         _scheduleVideoReset() {
             this._cancelScheduledReset();
             if (!this.imgEl) return;
-            const style = getComputedStyle(this.imgEl);
-            const hasT = style.transitionDuration !== '0s' && parseFloat(style.transitionDuration) > 0;
+            const st = getComputedStyle(this.imgEl);
+            const hasT = st.transitionDuration !== '0s' && parseFloat(st.transitionDuration) > 0;
             const doReset = () => {
                 if (!this.isPlaying) { try { this.videoEl.currentTime = 0; } catch (_) {} }
                 this._cancelScheduledReset();
@@ -527,13 +471,11 @@
             };
             this._resetFallbackTimer = setTimeout(doReset, 500);
         }
-
         _cancelScheduledReset() {
             if (this._resetOnTransitionEnd) { this._resetOnTransitionEnd(); this._resetOnTransitionEnd = null; }
             if (this._resetFallbackTimer) { clearTimeout(this._resetFallbackTimer); this._resetFallbackTimer = null; }
             this._onResetDone = null;
         }
-
         _cleanupPlayingWaiter() {
             if (this._playingHandler) {
                 this.videoEl.removeEventListener('playing', this._playingHandler);
@@ -555,11 +497,7 @@
             }
             this._doStart();
         }
-
-        _onCanPlayStart = () => {
-            this._pendingCanPlay = false;
-            this._doStart();
-        };
+        _onCanPlayStart = () => { this._pendingCanPlay = false; this._doStart(); };
 
         _doStart() {
             if (this.loadFailed) return;
@@ -580,7 +518,6 @@
                 if (this.isPlaying) this.container.classList.add('is-playing');
             }, 500);
         }
-
         stop() {
             if ((!this.isPlaying && !this.isEndingGracefully) || this.loadFailed) return;
             const wasEnding = this.isEndingGracefully;
@@ -591,13 +528,11 @@
             if (!this.videoEl.paused) this.videoEl.pause();
             if (!wasEnding) this._scheduleVideoReset();
         }
-
         suspend() {
             this._clearLongPressTimer();
             if (this.isPlaying || this.isEndingGracefully) this.stop();
             try { this.videoEl.pause(); this.videoEl.currentTime = 0; } catch (_) {}
         }
-
         _endGracefully() {
             if (this.isEndingGracefully || this.loadFailed) return;
             this.isEndingGracefully = true;
@@ -683,9 +618,6 @@
         }
     }
 
-    /* =========================================================
-       2. LivePhoto 入口
-       ========================================================= */
     class LivePhoto {
         static init(selector = '.live-photo', options = {}) {
             let containers;
@@ -693,45 +625,37 @@
             else if (selector instanceof HTMLElement) containers = [selector];
             else if (selector instanceof NodeList || Array.isArray(selector)) containers = Array.from(selector);
             else throw new Error('LivePhoto.init: invalid selector');
-
-            const instances = [];
+            const out = [];
             for (const c of containers) {
                 if (c.querySelector('.live-photo-badge')) {
-                    console.warn('LivePhoto: already initialized on this container', c);
+                    console.warn('LivePhoto: already initialized', c);
                     continue;
                 }
                 try {
                     const inst = new LivePhotoInstance(c, options);
                     c._livePhotoInstance = inst;
-                    instances.push(inst);
-                } catch (err) {
-                    console.error('LivePhoto initialize failed:', err);
-                }
+                    out.push(inst);
+                } catch (err) { console.error('LivePhoto initialize failed:', err); }
             }
-            return instances;
+            return out;
         }
     }
 
-    /* =========================================================
-       3. Lightbox
-       ========================================================= */
-    const MIN_SCALE = 1;
-    const MAX_SCALE = 5;
+    /* ========== Lightbox ========== */
+    const MIN_SCALE = 1, MAX_SCALE = 5;
     let lbState = null;
 
     function getRect(el) {
         const r = el.getBoundingClientRect();
         return { left: r.left, top: r.top, width: r.width, height: r.height };
     }
-
-    function getFinalSize(natW, natH, vw, vh) {
-        const maxW = vw * 0.85, maxH = vh * 0.85;
-        let w = natW, h = natH;
-        if (w > maxW) { const r = maxW / w; w = maxW; h *= r; }
-        if (h > maxH) { const r = maxH / h; h = maxH; w *= r; }
+    function getFinalSize(nw, nh, vw, vh) {
+        const mw = vw * 0.85, mh = vh * 0.85;
+        let w = nw, h = nh;
+        if (w > mw) { const r = mw / w; w = mw; h *= r; }
+        if (h > mh) { const r = mh / h; h = mh; w *= r; }
         return { width: w, height: h };
     }
-
     function isLivePhotoImage(img) {
         return img.classList.contains('live-photo-img') ||
             img.dataset.livePhoto === 'true' ||
@@ -740,57 +664,51 @@
 
     function applyTransform() {
         if (!lbState || !lbState.cloneEl) return;
-        const { x, y } = lbState.translate;
-        lbState.cloneEl.style.transform = `translate3d(${x}px,${y}px,0) scale(${lbState.scale})`;
+        lbState.cloneEl.style.transform =
+            `translate3d(${lbState.translate.x}px,${lbState.translate.y}px,0) scale(${lbState.scale})`;
     }
-
     function clampTranslate() {
         if (!lbState || !lbState.baseRect) return;
         const vw = window.innerWidth, vh = window.innerHeight;
         const { width, height } = lbState.baseRect;
         const s = lbState.scale;
-        const maxX = Math.max(0, (width * s - vw) / 2);
-        const maxY = Math.max(0, (height * s - vh) / 2);
-        lbState.translate.x = Math.min(maxX, Math.max(-maxX, lbState.translate.x));
-        lbState.translate.y = Math.min(maxY, Math.max(-maxY, lbState.translate.y));
+        const mx = Math.max(0, (width * s - vw) / 2);
+        const my = Math.max(0, (height * s - vh) / 2);
+        lbState.translate.x = Math.min(mx, Math.max(-mx, lbState.translate.x));
+        lbState.translate.y = Math.min(my, Math.max(-my, lbState.translate.y));
     }
-
-    function zoomAtPoint(newScale, clientX, clientY) {
+    function zoomAtPoint(ns, cx, cy) {
         if (!lbState) return;
-        newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, newScale));
-        if (newScale === lbState.scale) return;
-        const k = newScale / lbState.scale;
+        ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, ns));
+        if (ns === lbState.scale) return;
+        const k = ns / lbState.scale;
         const br = lbState.baseRect;
-        const cx = br.left + br.width / 2;
-        const cy = br.top + br.height / 2;
-        lbState.translate.x = (clientX - cx) * (1 - k) + k * lbState.translate.x;
-        lbState.translate.y = (clientY - cy) * (1 - k) + k * lbState.translate.y;
-        lbState.scale = newScale;
+        const ox = br.left + br.width / 2, oy = br.top + br.height / 2;
+        lbState.translate.x = (cx - ox) * (1 - k) + k * lbState.translate.x;
+        lbState.translate.y = (cy - oy) * (1 - k) + k * lbState.translate.y;
+        lbState.scale = ns;
         clampTranslate();
         applyTransform();
         lbState.cloneEl.classList.toggle('zoomed', lbState.scale > 1);
     }
-
-    function animateZoomToPoint(targetScale, clientX, clientY) {
+    function animateZoomToPoint(ts, cx, cy) {
         if (!lbState || lbState.isZoomAnimating || lbState.isResetting) return;
-        targetScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, targetScale));
-        if (targetScale === lbState.scale) return;
-        const k = targetScale / lbState.scale;
+        ts = Math.min(MAX_SCALE, Math.max(MIN_SCALE, ts));
+        if (ts === lbState.scale) return;
+        const k = ts / lbState.scale;
         const br = lbState.baseRect;
-        const cx = br.left + br.width / 2;
-        const cy = br.top + br.height / 2;
-        const tx = (clientX - cx) * (1 - k) + k * lbState.translate.x;
-        const ty = (clientY - cy) * (1 - k) + k * lbState.translate.y;
+        const ox = br.left + br.width / 2, oy = br.top + br.height / 2;
+        const tx = (cx - ox) * (1 - k) + k * lbState.translate.x;
+        const ty = (cy - oy) * (1 - k) + k * lbState.translate.y;
 
         lbState.isZoomAnimating = true;
         const clone = lbState.cloneEl;
         clone.style.transition = 'transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1)';
-        lbState.scale = targetScale;
+        lbState.scale = ts;
         lbState.translate.x = tx;
         lbState.translate.y = ty;
         clampTranslate();
         applyTransform();
-
         const done = () => {
             clone.removeEventListener('transitionend', done);
             clone.style.transition = '';
@@ -801,7 +719,6 @@
         clone.addEventListener('transitionend', done);
         setTimeout(() => { if (lbState && lbState.isZoomAnimating) done(); }, 350);
     }
-
     function resetTransform() {
         if (!lbState || lbState.isResetting || lbState.isZoomAnimating) return;
         if (lbState.isDragging) {
@@ -830,8 +747,7 @@
     function onWheel(e) {
         if (!lbState || lbState.isAnimating || lbState.isLivePhoto) return;
         e.preventDefault();
-        const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        zoomAtPoint(lbState.scale * delta, e.clientX, e.clientY);
+        zoomAtPoint(lbState.scale * (e.deltaY > 0 ? 0.9 : 1.1), e.clientX, e.clientY);
     }
     function onPointerDown(e) {
         if (!lbState || lbState.isLivePhoto || lbState.scale === 1) return;
@@ -873,8 +789,8 @@
         if (e.touches.length === 2 && lbState.initialDistance > 0 && !lbState.isLivePhoto) {
             e.preventDefault();
             const t1 = e.touches[0], t2 = e.touches[1];
-            const distance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-            let ns = lbState.initialScale * (distance / lbState.initialDistance);
+            const d = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            let ns = lbState.initialScale * (d / lbState.initialDistance);
             ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, ns));
             if (ns !== lbState.scale) {
                 zoomAtPoint(ns, (t1.clientX + t2.clientX) / 2, (t1.clientY + t2.clientY) / 2);
@@ -919,42 +835,41 @@
             lbState.tapTimer = setTimeout(() => { if (lbState) lbState.lastTap = 0; }, 300);
         }
     }
-
     function bindZoomEvents() {
         if (!lbState || lbState.isLivePhoto) return;
-        const clone = lbState.cloneEl;
-        clone.addEventListener('wheel', onWheel, { passive: false });
-        clone.addEventListener('mousedown', onPointerDown);
+        const c = lbState.cloneEl;
+        c.addEventListener('wheel', onWheel, { passive: false });
+        c.addEventListener('mousedown', onPointerDown);
         window.addEventListener('mousemove', onPointerMove);
         window.addEventListener('mouseup', onPointerUp);
-        clone.addEventListener('touchstart', onTouchStartForDoubleTap, { passive: false });
-        clone.addEventListener('touchstart', onTouchStart, { passive: false });
-        clone.addEventListener('touchmove', onTouchMove, { passive: false });
-        clone.addEventListener('touchend', onTouchEnd);
-        clone.addEventListener('touchcancel', onTouchEnd);
-        clone.addEventListener('dblclick', onDoubleClick);
-        clone.style.cursor = 'pointer';
+        c.addEventListener('touchstart', onTouchStartForDoubleTap, { passive: false });
+        c.addEventListener('touchstart', onTouchStart, { passive: false });
+        c.addEventListener('touchmove', onTouchMove, { passive: false });
+        c.addEventListener('touchend', onTouchEnd);
+        c.addEventListener('touchcancel', onTouchEnd);
+        c.addEventListener('dblclick', onDoubleClick);
+        c.style.cursor = 'pointer';
     }
     function unbindZoomEvents() {
         if (!lbState || !lbState.cloneEl) return;
-        const clone = lbState.cloneEl;
-        clone.removeEventListener('wheel', onWheel);
-        clone.removeEventListener('mousedown', onPointerDown);
+        const c = lbState.cloneEl;
+        c.removeEventListener('wheel', onWheel);
+        c.removeEventListener('mousedown', onPointerDown);
         window.removeEventListener('mousemove', onPointerMove);
         window.removeEventListener('mouseup', onPointerUp);
-        clone.removeEventListener('touchstart', onTouchStartForDoubleTap);
-        clone.removeEventListener('touchstart', onTouchStart);
-        clone.removeEventListener('touchmove', onTouchMove);
-        clone.removeEventListener('touchend', onTouchEnd);
-        clone.removeEventListener('touchcancel', onTouchEnd);
-        clone.removeEventListener('dblclick', onDoubleClick);
+        c.removeEventListener('touchstart', onTouchStartForDoubleTap);
+        c.removeEventListener('touchstart', onTouchStart);
+        c.removeEventListener('touchmove', onTouchMove);
+        c.removeEventListener('touchend', onTouchEnd);
+        c.removeEventListener('touchcancel', onTouchEnd);
+        c.removeEventListener('dblclick', onDoubleClick);
         if (lbState.tapTimer) { clearTimeout(lbState.tapTimer); lbState.tapTimer = null; }
     }
 
     function createOverlayDOM() {
-        const overlay = document.createElement('div');
-        overlay.className = 'lightbox-overlay';
-        overlay.innerHTML =
+        const o = document.createElement('div');
+        o.className = 'lightbox-overlay';
+        o.innerHTML =
             '<div class="lightbox-blur"></div>' +
             '<div class="lightbox-dim"></div>' +
             '<div class="lightbox-close-btn" role="button" aria-label="关闭">' +
@@ -962,7 +877,15 @@
                     '<path d="M6 6l12 12M18 6L6 18"/>' +
                 '</svg>' +
             '</div>';
-        return overlay;
+        return o;
+    }
+
+    function computeFlyParams(startRect, finalRect) {
+        const sx = startRect.width / finalRect.width;
+        const sy = startRect.height / finalRect.height;
+        const tx = (startRect.left + startRect.width / 2) - (finalRect.left + finalRect.width / 2);
+        const ty = (startRect.top + startRect.height / 2) - (finalRect.top + finalRect.height / 2);
+        return { sx, sy, tx, ty };
     }
 
     function destroyOverlay() {
@@ -971,7 +894,6 @@
         if (lbState.resizeHandler) window.removeEventListener('resize', lbState.resizeHandler);
         if (lbState.escHandler) window.removeEventListener('keydown', lbState.escHandler);
 
-        // 清理灯箱内 video 播放相关监听
         if (lbState._videoListeners) {
             const vl = lbState._videoListeners;
             const c = lbState.cloneEl;
@@ -982,17 +904,18 @@
                 c.removeEventListener('touchend', vl.pause);
                 c.removeEventListener('touchcancel', vl.pause);
             }
-            if (lbState.videoEl) {
-                lbState.videoEl.removeEventListener('ended', vl.onEnded);
-            }
+            if (lbState.videoEl) lbState.videoEl.removeEventListener('ended', vl.onEnded);
             lbState._videoListeners = null;
         }
 
+        // video 归还原位：还原原始 inline style
         if (lbState.videoMoved && lbState.originalVideoParent && lbState.originalVideoParent.isConnected) {
             const v = lbState.cloneEl.querySelector('.live-photo-video');
             if (v && v.parentNode === lbState.cloneEl) {
                 try { v.pause(); v.currentTime = 0; } catch (_) {}
-                v.style.cssText = ''; // 清掉注入的内联样式
+                const orig = lbState.originalVideoInlineStyle || '';
+                if (orig) v.setAttribute('style', orig);
+                else v.removeAttribute('style');
                 try { lbState.originalVideoParent.insertBefore(v, lbState.originalVideoNext); }
                 catch (_) { lbState.originalVideoParent.appendChild(v); }
             }
@@ -1010,8 +933,7 @@
         if (lbState) return;
         if (!imgElement || !imgElement.src) return;
 
-        const natW = imgElement.naturalWidth;
-        const natH = imgElement.naturalHeight;
+        const natW = imgElement.naturalWidth, natH = imgElement.naturalHeight;
         if (!natW || !natH) {
             const onLoad = () => {
                 imgElement.removeEventListener('load', onLoad);
@@ -1023,7 +945,6 @@
 
         const originalContainer = imgElement.closest('.live-photo');
         const isLivePhoto = isLivePhotoImage(imgElement) && !!originalContainer;
-
         const startRect = getRect(imgElement);
         if (!startRect.width || !startRect.height) return;
 
@@ -1031,6 +952,7 @@
         const { width: finalW, height: finalH } = getFinalSize(natW, natH, vw, vh);
         const finalLeft = (vw - finalW) / 2;
         const finalTop = (vh - finalH) / 2;
+        const finalRect = { left: finalLeft, top: finalTop, width: finalW, height: finalH };
 
         if (originalContainer && originalContainer._livePhotoInstance) {
             originalContainer._livePhotoInstance.suspend();
@@ -1049,25 +971,29 @@
 
         let video = null;
         let videoMoved = false;
-        let originalVideoParent = null;
-        let originalVideoNext = null;
+        let originalVideoParent = null, originalVideoNext = null, originalVideoInlineStyle = '';
+        let badgeClone = null;
 
         if (isLivePhoto) {
-            const originalBadge = originalContainer.querySelector('.live-photo-badge');
-            if (originalBadge) {
-                const badgeClone = originalBadge.cloneNode(true);
-                const idNodes = badgeClone.querySelectorAll('[id]');
-                for (let i = 0; i < idNodes.length; i++) idNodes[i].removeAttribute('id');
+            const ob = originalContainer.querySelector('.live-photo-badge');
+            if (ob) {
+                badgeClone = ob.cloneNode(true);
+                const ids = badgeClone.querySelectorAll('[id]');
+                for (let i = 0; i < ids.length; i++) ids[i].removeAttribute('id');
+                // 动画期间隐藏 badge（因为容器会被非等比缩放，badge 会变形）
+                badgeClone.style.opacity = '0';
+                badgeClone.style.transition = 'opacity 0.2s ease';
                 clone.appendChild(badgeClone);
             }
 
-            const originalVideo = originalContainer.querySelector('.live-photo-video');
-            if (originalVideo) {
-                originalVideoParent = originalVideo.parentNode;
-                originalVideoNext = originalVideo.nextSibling;
-                try { originalVideo.pause(); } catch (_) {}
-                clone.appendChild(originalVideo);
-                video = originalVideo;
+            const ov = originalContainer.querySelector('.live-photo-video');
+            if (ov) {
+                originalVideoParent = ov.parentNode;
+                originalVideoNext = ov.nextSibling;
+                originalVideoInlineStyle = ov.getAttribute('style') || '';
+                try { ov.pause(); } catch (_) {}
+                clone.appendChild(ov);
+                video = ov;
                 videoMoved = true;
             } else {
                 video = document.createElement('video');
@@ -1087,14 +1013,31 @@
             }
         }
 
-        // ★ 初始几何 = startRect（与卡片一致），后面过渡到 finalRect
-        clone.style.left = startRect.left + 'px';
-        clone.style.top = startRect.top + 'px';
-        clone.style.width = startRect.width + 'px';
-        clone.style.height = startRect.height + 'px';
-        clone.style.borderRadius = '12px';
+        // ★ 关键：容器布局到终态
+        clone.style.left = finalLeft + 'px';
+        clone.style.top = finalTop + 'px';
+        clone.style.width = finalW + 'px';
+        clone.style.height = finalH + 'px';
+        clone.style.borderRadius = (finalW < 400 ? 10 : 12) + 'px';
+        clone.style.transformOrigin = 'center center';
+        clone.style.willChange = 'transform, opacity';
+
+        // ★ 用 transform 倒推到卡片位置
+        const fly = computeFlyParams(startRect, finalRect);
+        clone.style.transform =
+            `translate3d(${fly.tx}px,${fly.ty}px,0) scale(${fly.sx},${fly.sy})`;
         clone.style.opacity = '0';
-        clone.style.transform = 'translate3d(0,0,0) scale(1)';
+
+        // ★ 内部反向补偿，图片内容不拉伸
+        const innerInit = `scale(${1 / fly.sx},${1 / fly.sy})`;
+        img.style.transformOrigin = 'center center';
+        img.style.transform = innerInit;
+        img.style.willChange = 'transform';
+        if (video) {
+            video.style.transformOrigin = 'center center';
+            video.style.transform = innerInit;
+            video.style.willChange = 'transform';
+        }
 
         overlay.appendChild(clone);
         document.body.appendChild(overlay);
@@ -1109,58 +1052,53 @@
         }
 
         lbState = {
-            overlayEl: overlay,
-            cloneEl: clone,
-            imgEl: img,
-            videoEl: video,
-            isLivePhoto,
-            originalContainer,
-            originalImg: imgElement,
-            originalVideoParent,
-            originalVideoNext,
-            videoMoved,
-            baseRect: { left: finalLeft, top: finalTop, width: finalW, height: finalH },
-            scale: 1,
-            translate: { x: 0, y: 0 },
+            overlayEl: overlay, cloneEl: clone, imgEl: img, videoEl: video,
+            isLivePhoto, originalContainer, originalImg: imgElement,
+            originalVideoParent, originalVideoNext, videoMoved, originalVideoInlineStyle,
+            baseRect: finalRect,
+            scale: 1, translate: { x: 0, y: 0 },
             dragStart: { x: 0, y: 0 },
-            isDragging: false,
-            isResetting: false,
-            isZoomAnimating: false,
+            isDragging: false, isResetting: false, isZoomAnimating: false,
             isAnimating: true,
-            initialDistance: 0,
-            initialScale: 1,
-            lastTap: 0,
-            tapTimer: null,
-            resizeHandler: null,
-            escHandler: null,
-            _videoListeners: null,
-            _bodyOverflow: bodyOverflow,
-            _bodyPaddingRight: bodyPaddingRight
+            initialDistance: 0, initialScale: 1, lastTap: 0, tapTimer: null,
+            resizeHandler: null, escHandler: null, _videoListeners: null,
+            _bodyOverflow: bodyOverflow, _bodyPaddingRight: bodyPaddingRight
         };
 
         void clone.offsetWidth;
 
-        // ★ 打开：几何过渡 + opacity 快速淡入
-        clone.style.transition =
-            'left 0.42s cubic-bezier(0.2, 0.9, 0.4, 1), ' +
-            'top 0.42s cubic-bezier(0.2, 0.9, 0.4, 1), ' +
-            'width 0.42s cubic-bezier(0.2, 0.9, 0.4, 1), ' +
-            'height 0.42s cubic-bezier(0.2, 0.9, 0.4, 1), ' +
-            'opacity 0.15s ease';
+        // ★ 只用 transform + opacity，全程合成层
+        const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
+        clone.style.transition = `transform 0.42s ${easing}, opacity 0.15s ease`;
+        img.style.transition = `transform 0.42s ${easing}`;
+        if (video) video.style.transition = `transform 0.42s ${easing}`;
 
         requestAnimationFrame(() => {
             if (!lbState) return;
             overlay.classList.add('is-open');
-            clone.style.left = finalLeft + 'px';
-            clone.style.top = finalTop + 'px';
-            clone.style.width = finalW + 'px';
-            clone.style.height = finalH + 'px';
+            clone.style.transform = 'translate3d(0,0,0) scale(1,1)';
             clone.style.opacity = '1';
+            img.style.transform = 'scale(1,1)';
+            if (video) video.style.transform = 'scale(1,1)';
         });
 
         const finishOpen = () => {
             if (!lbState || !lbState.isAnimating) return;
             lbState.isAnimating = false;
+
+            // 清理 inline transform，让 CSS 播放规则（scale 1.08）能生效
+            clone.style.willChange = '';
+            img.style.transform = '';
+            img.style.transition = '';
+            img.style.willChange = '';
+            if (video) {
+                video.style.transform = '';
+                video.style.transition = '';
+                video.style.willChange = '';
+            }
+
+            // badge 显现
+            if (badgeClone) badgeClone.style.opacity = '1';
 
             if (!lbState.isLivePhoto) {
                 bindZoomEvents();
@@ -1178,7 +1116,6 @@
                     try { v.pause(); v.currentTime = 0; } catch (_) {}
                     clone.classList.remove('is-playing');
                 };
-                // ★ 视频播完立即回到图片，不再卡最后一帧
                 const onEnded = () => {
                     try { v.currentTime = 0; } catch (_) {}
                     clone.classList.remove('is-playing');
@@ -1189,34 +1126,28 @@
                 clone.addEventListener('touchend', pause);
                 clone.addEventListener('touchcancel', pause);
                 v.addEventListener('ended', onEnded);
-
                 lbState._videoListeners = { play, pause, onEnded };
             }
         };
 
-        const onTransitionEnd = (e) => {
+        const onTE = (e) => {
             if (e.target !== clone) return;
-            // left 最先开始，动画一结束就触发，足够
-            if (e.propertyName !== 'left') return;
-            clone.removeEventListener('transitionend', onTransitionEnd);
+            if (e.propertyName !== 'transform') return;
+            clone.removeEventListener('transitionend', onTE);
             finishOpen();
         };
-        clone.addEventListener('transitionend', onTransitionEnd);
+        clone.addEventListener('transitionend', onTE);
         setTimeout(() => {
             if (lbState && lbState.isAnimating) {
-                clone.removeEventListener('transitionend', onTransitionEnd);
+                clone.removeEventListener('transitionend', onTE);
                 finishOpen();
             }
         }, 520);
 
         overlay.addEventListener('click', (e) => {
             if (!lbState || lbState.isAnimating) return;
-            if (e.target === overlay) {
-                e.stopPropagation();
-                closeLightbox(false);
-            }
+            if (e.target === overlay) { e.stopPropagation(); closeLightbox(false); }
         });
-
         const closeBtn = overlay.querySelector('.lightbox-close-btn');
         closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1242,14 +1173,14 @@
         if (!lbState) return;
         if (lbState.isAnimating && !skipAnimation) return;
 
-        const { overlayEl, cloneEl, originalImg } = lbState;
+        const { overlayEl, cloneEl, imgEl, videoEl, originalImg } = lbState;
 
         if (lbState.resizeHandler) { window.removeEventListener('resize', lbState.resizeHandler); lbState.resizeHandler = null; }
         if (lbState.escHandler) { window.removeEventListener('keydown', lbState.escHandler); lbState.escHandler = null; }
         unbindZoomEvents();
 
-        if (lbState.videoEl) {
-            try { lbState.videoEl.pause(); lbState.videoEl.currentTime = 0; } catch (_) {}
+        if (videoEl) {
+            try { videoEl.pause(); videoEl.currentTime = 0; } catch (_) {}
         }
 
         if (skipAnimation || !overlayEl || !cloneEl || !originalImg) {
@@ -1258,38 +1189,38 @@
         }
 
         const startRect = getRect(originalImg);
-        if (!startRect.width || !startRect.height) {
-            destroyOverlay();
-            return;
-        }
+        if (!startRect.width || !startRect.height) { destroyOverlay(); return; }
 
         lbState.isAnimating = true;
-
         overlayEl.classList.remove('is-open');
         cloneEl.classList.remove('is-playing', 'zoomed', 'dragging');
 
-        // ★ 先无过渡归零 transform（如果之前缩放/拖拽过）
+        // 清除缩放/拖拽遗留的 transform
         cloneEl.style.transition = 'none';
-        cloneEl.style.transform = 'translate3d(0,0,0) scale(1)';
+        cloneEl.style.transform = 'translate3d(0,0,0) scale(1,1)';
+        if (imgEl) imgEl.style.transform = '';
+        if (videoEl) videoEl.style.transform = '';
         void cloneEl.offsetWidth;
 
-        // ★ 关闭：几何过渡 + opacity 延迟淡出
-        cloneEl.style.transition =
-            'left 0.38s cubic-bezier(0.2, 0.9, 0.4, 1), ' +
-            'top 0.38s cubic-bezier(0.2, 0.9, 0.4, 1), ' +
-            'width 0.38s cubic-bezier(0.2, 0.9, 0.4, 1), ' +
-            'height 0.38s cubic-bezier(0.2, 0.9, 0.4, 1), ' +
-            'opacity 0.15s ease 0.25s';
+        const fly = computeFlyParams(startRect, lbState.baseRect);
+        const easing = 'cubic-bezier(0.2, 0.9, 0.4, 1)';
+        cloneEl.style.willChange = 'transform, opacity';
+        if (imgEl) imgEl.style.willChange = 'transform';
+        if (videoEl) videoEl.style.willChange = 'transform';
 
-        cloneEl.style.left = startRect.left + 'px';
-        cloneEl.style.top = startRect.top + 'px';
-        cloneEl.style.width = startRect.width + 'px';
-        cloneEl.style.height = startRect.height + 'px';
+        // ★ 反向补偿 + 延迟淡出
+        cloneEl.style.transition = `transform 0.38s ${easing}, opacity 0.15s ease 0.25s`;
+        if (imgEl) imgEl.style.transition = `transform 0.38s ${easing}`;
+        if (videoEl) videoEl.style.transition = `transform 0.38s ${easing}`;
+
+        cloneEl.style.transform =
+            `translate3d(${fly.tx}px,${fly.ty}px,0) scale(${fly.sx},${fly.sy})`;
         cloneEl.style.opacity = '0';
+        if (imgEl) imgEl.style.transform = `scale(${1 / fly.sx},${1 / fly.sy})`;
+        if (videoEl) videoEl.style.transform = `scale(${1 / fly.sx},${1 / fly.sy})`;
 
         const onEnd = (e) => {
             if (e.target !== cloneEl) return;
-            // opacity 最后结束（0.25 + 0.15 = 0.4s）
             if (e.propertyName !== 'opacity') return;
             cloneEl.removeEventListener('transitionend', onEnd);
             destroyOverlay();
@@ -1299,27 +1230,18 @@
     }
 
     function initLightbox(selector = '.lightbox-img') {
-        const handleClick = (e) => {
+        const handle = (e) => {
             if (lbState) return;
             const lp = e.target.closest('.live-photo');
             if (lp) {
                 const img = lp.querySelector('.live-photo-img');
-                if (img) {
-                    e.preventDefault();
-                    openLightbox(img);
-                    return;
-                }
+                if (img) { e.preventDefault(); openLightbox(img); return; }
             }
             const img = e.target.closest(selector);
-            if (img && img.tagName === 'IMG') {
-                e.preventDefault();
-                openLightbox(img);
-            }
+            if (img && img.tagName === 'IMG') { e.preventDefault(); openLightbox(img); }
         };
-        document.body.addEventListener('click', handleClick);
-        return function destroy() {
-            document.body.removeEventListener('click', handleClick);
-        };
+        document.body.addEventListener('click', handle);
+        return function destroy() { document.body.removeEventListener('click', handle); };
     }
 
     if (document.readyState === 'loading') {
