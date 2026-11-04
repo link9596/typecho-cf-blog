@@ -102,12 +102,31 @@ const { siteTitle = '' } = Astro.props;
     var PAD = 16;           // 外围留白宽度
     var WATERMARK_H = 32;   // 底部留给水印的高度
 
-    // 全局检测是否支持 Canvas 滤镜
+    // 检测是否支持真实的 Canvas 滤镜
     var CANVAS_FILTER_SUPPORTED = (function() {
+      // 1. iOS 设备判定为不支持
+      var ua = navigator.userAgent;
+      var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isIOS) return false;
+
+      // 2. 其他设备走像素级检测
       var c = document.createElement('canvas');
+      c.width = 1;
+      c.height = 1;
       var ctx = c.getContext('2d');
-      ctx.filter = 'blur(2px)';
-      return ctx.filter !== 'none';
+      if (!ctx || typeof ctx.filter === 'undefined') return false;
+      
+      try {
+        ctx.filter = 'blur(2px)';
+        ctx.fillStyle = 'red';
+        ctx.fillRect(0, 0, 1, 1);
+        // 如果支持滤镜，1x1 的红色块经过 blur(2px) 边缘应该会变淡变透明
+        var data = ctx.getImageData(0, 0, 1, 1).data;
+        // 如果 alpha 变透明了，或者颜色不对，说明生效了
+        return data[3] > 0 && data[3] < 255;
+      } catch (e) {
+        return false;
+      }
     })();
 
     function roundRectPath(ctx, x, y, w, h, r) {
@@ -164,13 +183,13 @@ const { siteTitle = '' } = Astro.props;
       var map = new Map();
       await Promise.all(imgs.map(async function (img) {
         var src = img.currentSrc || img.src || img.getAttribute('src');
-
+        
         // 修复连续点击图片空白的问题：复用缓存
         if (img._snowiSafeSrc === src && img._snowiSafeImg) {
           map.set(img, img._snowiSafeImg);
           return;
         }
-
+        
         var safe = await loadSafeImage(src);
         if (safe) {
           map.set(img, safe);
@@ -350,91 +369,9 @@ const { siteTitle = '' } = Astro.props;
       return null;
     }
 
-    /* ============ SVG 渲染：支持 dash / g-transform / preserveAspectRatio ============ */
-
-    // 读取元素自身的 transform（<g transform="rotate(...)"> 等）并 consolidate 成矩阵
-    function getSvgTransformMatrix(el) {
-      try {
-        if (el.transform && el.transform.baseVal) {
-          var m = el.transform.baseVal.consolidate();
-          if (m) return m.matrix;
-        }
-      } catch (e) {}
-      return null;
-    }
-
-    // "0 6.28" / "163.36" / "10,5" / "none"  →  [0, 6.28] / [163.36] / [10,5] / []
-    function parseDashArray(str) {
-      if (!str || str === 'none') return [];
-      var parts = str.split(/[\s,]+/).map(function (s) { return parseFloat(s); });
-      var out = [];
-      for (var i = 0; i < parts.length; i++) {
-        if (!isNaN(parts[i])) out.push(parts[i]);
-      }
-      return out;
-    }
-
-    // 递归绘制 SVG 节点：处理 <g> 的 transform、继承样式、dash
-    function drawSvgNode(ctx, el) {
-      var tag = el.tagName ? el.tagName.toLowerCase() : '';
-      var cs;
-      try { cs = getComputedStyle(el); } catch (e) { return; }
-      if (cs.display === 'none' || cs.visibility === 'hidden') return;
-      var op = parseFloat(cs.opacity);
-      if (!isNaN(op) && op === 0) return;
-
-      var m = getSvgTransformMatrix(el);
-      ctx.save();
-      if (m) ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
-
-      // 容器型元素：只递归，不绘制自身
-      if (tag === 'g' || tag === 'svg' || tag === 'symbol' || tag === 'defs') {
-        var kids = el.children;
-        for (var i = 0; i < kids.length; i++) {
-          drawSvgNode(ctx, kids[i]);
-        }
-        ctx.restore();
-        return;
-      }
-
-      var path = svgElementToPath(el);
-      if (path) {
-        var fill = cs.fill;
-        var stroke = cs.stroke;
-        var sw = parseFloat(cs.strokeWidth);
-        if (isNaN(sw)) sw = 1;
-
-        ctx.lineCap = cs.strokeLinecap || 'round';
-        ctx.lineJoin = cs.strokeLinejoin || 'round';
-
-        // fill（filter 掉 none / 全透明）
-        if (fill && fill !== 'none' && fill !== 'transparent' && fill !== 'rgba(0, 0, 0, 0)') {
-          ctx.fillStyle = fill;
-          ctx.fill(path);
-        }
-
-        // stroke（含 dash）
-        if (stroke && stroke !== 'none' && stroke !== 'transparent') {
-          ctx.strokeStyle = stroke;
-          ctx.lineWidth = sw;
-
-          var dash = parseDashArray(cs.strokeDasharray);
-          ctx.setLineDash(dash);
-
-          var off = parseFloat(cs.strokeDashoffset);
-          ctx.lineDashOffset = isNaN(off) ? 0 : off;
-
-          ctx.stroke(path);
-        }
-      }
-
-      ctx.restore();
-    }
-
     function drawSvg(ctx, svgEl, baseX, baseY) {
       var r = svgEl.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
-
       var vb = svgEl.getAttribute('viewBox');
       if (!vb) return;
       var parts = vb.trim().split(/[\s,]+/).map(Number);
@@ -442,31 +379,30 @@ const { siteTitle = '' } = Astro.props;
       var vx = parts[0], vy = parts[1], vw = parts[2], vh = parts[3];
       if (!vw || !vh) return;
 
-      // preserveAspectRatio 默认 xMidYMid meet
-      var par = (svgEl.getAttribute('preserveAspectRatio') || 'xMidYMid meet').trim().split(/\s+/);
-      var align = par[0] || 'xMidYMid';
-      var meetOrSlice = par[1] || 'meet';
-
-      var scaleX = r.width / vw;
-      var scaleY = r.height / vh;
-      var scale = meetOrSlice === 'slice' ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
-
-      var extraW = r.width - vw * scale;
-      var extraH = r.height - vh * scale;
-      var ox = 0, oy = 0;
-      if (align.indexOf('xMax') !== -1) ox = extraW;
-      else if (align.indexOf('xMid') !== -1) ox = extraW / 2;
-      if (align.indexOf('YMax') !== -1) oy = extraH;
-      else if (align.indexOf('YMid') !== -1) oy = extraH / 2;
-
       ctx.save();
-      ctx.translate(r.left - baseX + ox, r.top - baseY + oy);
-      ctx.scale(scale, scale);
+      ctx.translate(r.left - baseX, r.top - baseY);
+      ctx.scale(r.width / vw, r.height / vh);
       ctx.translate(-vx, -vy);
 
-      var children = svgEl.children;
+      var children = svgEl.querySelectorAll('path, line, polyline, polygon, circle, rect, ellipse');
       for (var i = 0; i < children.length; i++) {
-        drawSvgNode(ctx, children[i]);
+        var child = children[i];
+        var path = svgElementToPath(child);
+        if (!path) continue;
+        var cs = getComputedStyle(child);
+        var fill = cs.fill;
+        var stroke = cs.stroke;
+        var sw = parseFloat(cs.strokeWidth) || 1;
+
+        ctx.lineCap = cs.strokeLinecap || 'round';
+        ctx.lineJoin = cs.strokeLinejoin || 'round';
+
+        if (fill && fill !== 'none' && fill !== 'rgba(0, 0, 0, 0)') {
+          ctx.fillStyle = fill; ctx.fill(path);
+        }
+        if (stroke && stroke !== 'none') {
+          ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.stroke(path);
+        }
       }
       ctx.restore();
     }
@@ -555,14 +491,14 @@ const { siteTitle = '' } = Astro.props;
         var bdx = sx - (bdw - sw) / 2, bdy = sy - (bdh - sh) / 2;
 
         if (CANVAS_FILTER_SUPPORTED) {
-          // 方案 A：支持原生 Canvas 滤镜（PC、Android 等）
+          // 方案 A：支持原生 Canvas 滤镜
           ctx.save();
           try { ctx.filter = 'blur(100px) saturate(1) brightness(0.4)'; } catch (e) {}
           try { ctx.drawImage(coverImg, bdx, bdy, bdw, bdh); } catch(e) {}
           ctx.filter = 'none';
           ctx.restore();
         } else {
-          // 方案 B：不支持原生滤镜（如 iOS Safari），降级为降采样模拟
+          // 方案 B：不支持原生滤镜降级为降采样模拟
           var blurCanvas = document.createElement('canvas');
           var bScale = 0.02; 
           var bSw = Math.max(1, Math.floor(bdw * bScale));
@@ -570,14 +506,14 @@ const { siteTitle = '' } = Astro.props;
           blurCanvas.width = bSw;
           blurCanvas.height = bSh;
           var bCtx = blurCanvas.getContext('2d');
-
+          
           try { bCtx.drawImage(coverImg, 0, 0, bSw, bSh); } catch(e) {}
-
+          
           ctx.save();
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           try { ctx.drawImage(blurCanvas, bdx, bdy, bdw, bdh); } catch(e) {}
-
+          
           // 降采样代替 brightness(0.4) 的压暗效果
           ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
           ctx.fillRect(bdx, bdy, bdw, bdh);
@@ -930,7 +866,7 @@ const { siteTitle = '' } = Astro.props;
       // 让按钮失去焦点，防止 :focus 带来的样式
       btn.blur(); 
 
-      // 【关键修复】截图前临时剥离所有操作按钮的 hover / active 高亮
+      // 截图前临时剥离所有操作按钮的 hover / active 高亮
       var actionBtns = card.querySelectorAll('.action-btn');
       var originalStyles = [];
       for (var i = 0; i < actionBtns.length; i++) {
