@@ -164,13 +164,13 @@ const { siteTitle = '' } = Astro.props;
       var map = new Map();
       await Promise.all(imgs.map(async function (img) {
         var src = img.currentSrc || img.src || img.getAttribute('src');
-        
+
         // 修复连续点击图片空白的问题：复用缓存
         if (img._snowiSafeSrc === src && img._snowiSafeImg) {
           map.set(img, img._snowiSafeImg);
           return;
         }
-        
+
         var safe = await loadSafeImage(src);
         if (safe) {
           map.set(img, safe);
@@ -350,9 +350,91 @@ const { siteTitle = '' } = Astro.props;
       return null;
     }
 
+    /* ============ SVG 渲染：支持 dash / g-transform / preserveAspectRatio ============ */
+
+    // 读取元素自身的 transform（<g transform="rotate(...)"> 等）并 consolidate 成矩阵
+    function getSvgTransformMatrix(el) {
+      try {
+        if (el.transform && el.transform.baseVal) {
+          var m = el.transform.baseVal.consolidate();
+          if (m) return m.matrix;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    // "0 6.28" / "163.36" / "10,5" / "none"  →  [0, 6.28] / [163.36] / [10,5] / []
+    function parseDashArray(str) {
+      if (!str || str === 'none') return [];
+      var parts = str.split(/[\s,]+/).map(function (s) { return parseFloat(s); });
+      var out = [];
+      for (var i = 0; i < parts.length; i++) {
+        if (!isNaN(parts[i])) out.push(parts[i]);
+      }
+      return out;
+    }
+
+    // 递归绘制 SVG 节点：处理 <g> 的 transform、继承样式、dash
+    function drawSvgNode(ctx, el) {
+      var tag = el.tagName ? el.tagName.toLowerCase() : '';
+      var cs;
+      try { cs = getComputedStyle(el); } catch (e) { return; }
+      if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      var op = parseFloat(cs.opacity);
+      if (!isNaN(op) && op === 0) return;
+
+      var m = getSvgTransformMatrix(el);
+      ctx.save();
+      if (m) ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+
+      // 容器型元素：只递归，不绘制自身
+      if (tag === 'g' || tag === 'svg' || tag === 'symbol' || tag === 'defs') {
+        var kids = el.children;
+        for (var i = 0; i < kids.length; i++) {
+          drawSvgNode(ctx, kids[i]);
+        }
+        ctx.restore();
+        return;
+      }
+
+      var path = svgElementToPath(el);
+      if (path) {
+        var fill = cs.fill;
+        var stroke = cs.stroke;
+        var sw = parseFloat(cs.strokeWidth);
+        if (isNaN(sw)) sw = 1;
+
+        ctx.lineCap = cs.strokeLinecap || 'round';
+        ctx.lineJoin = cs.strokeLinejoin || 'round';
+
+        // fill（filter 掉 none / 全透明）
+        if (fill && fill !== 'none' && fill !== 'transparent' && fill !== 'rgba(0, 0, 0, 0)') {
+          ctx.fillStyle = fill;
+          ctx.fill(path);
+        }
+
+        // stroke（含 dash）
+        if (stroke && stroke !== 'none' && stroke !== 'transparent') {
+          ctx.strokeStyle = stroke;
+          ctx.lineWidth = sw;
+
+          var dash = parseDashArray(cs.strokeDasharray);
+          ctx.setLineDash(dash);
+
+          var off = parseFloat(cs.strokeDashoffset);
+          ctx.lineDashOffset = isNaN(off) ? 0 : off;
+
+          ctx.stroke(path);
+        }
+      }
+
+      ctx.restore();
+    }
+
     function drawSvg(ctx, svgEl, baseX, baseY) {
       var r = svgEl.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
+
       var vb = svgEl.getAttribute('viewBox');
       if (!vb) return;
       var parts = vb.trim().split(/[\s,]+/).map(Number);
@@ -360,30 +442,31 @@ const { siteTitle = '' } = Astro.props;
       var vx = parts[0], vy = parts[1], vw = parts[2], vh = parts[3];
       if (!vw || !vh) return;
 
+      // preserveAspectRatio 默认 xMidYMid meet
+      var par = (svgEl.getAttribute('preserveAspectRatio') || 'xMidYMid meet').trim().split(/\s+/);
+      var align = par[0] || 'xMidYMid';
+      var meetOrSlice = par[1] || 'meet';
+
+      var scaleX = r.width / vw;
+      var scaleY = r.height / vh;
+      var scale = meetOrSlice === 'slice' ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
+
+      var extraW = r.width - vw * scale;
+      var extraH = r.height - vh * scale;
+      var ox = 0, oy = 0;
+      if (align.indexOf('xMax') !== -1) ox = extraW;
+      else if (align.indexOf('xMid') !== -1) ox = extraW / 2;
+      if (align.indexOf('YMax') !== -1) oy = extraH;
+      else if (align.indexOf('YMid') !== -1) oy = extraH / 2;
+
       ctx.save();
-      ctx.translate(r.left - baseX, r.top - baseY);
-      ctx.scale(r.width / vw, r.height / vh);
+      ctx.translate(r.left - baseX + ox, r.top - baseY + oy);
+      ctx.scale(scale, scale);
       ctx.translate(-vx, -vy);
 
-      var children = svgEl.querySelectorAll('path, line, polyline, polygon, circle, rect, ellipse');
+      var children = svgEl.children;
       for (var i = 0; i < children.length; i++) {
-        var child = children[i];
-        var path = svgElementToPath(child);
-        if (!path) continue;
-        var cs = getComputedStyle(child);
-        var fill = cs.fill;
-        var stroke = cs.stroke;
-        var sw = parseFloat(cs.strokeWidth) || 1;
-
-        ctx.lineCap = cs.strokeLinecap || 'round';
-        ctx.lineJoin = cs.strokeLinejoin || 'round';
-
-        if (fill && fill !== 'none' && fill !== 'rgba(0, 0, 0, 0)') {
-          ctx.fillStyle = fill; ctx.fill(path);
-        }
-        if (stroke && stroke !== 'none') {
-          ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.stroke(path);
-        }
+        drawSvgNode(ctx, children[i]);
       }
       ctx.restore();
     }
@@ -487,14 +570,14 @@ const { siteTitle = '' } = Astro.props;
           blurCanvas.width = bSw;
           blurCanvas.height = bSh;
           var bCtx = blurCanvas.getContext('2d');
-          
+
           try { bCtx.drawImage(coverImg, 0, 0, bSw, bSh); } catch(e) {}
-          
+
           ctx.save();
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           try { ctx.drawImage(blurCanvas, bdx, bdy, bdw, bdh); } catch(e) {}
-          
+
           // 降采样代替 brightness(0.4) 的压暗效果
           ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
           ctx.fillRect(bdx, bdy, bdw, bdh);
