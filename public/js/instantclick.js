@@ -10,6 +10,8 @@
  *  B. 进度条：done() 找不到元素不复活；start()/init() 清理所有残留；body 替换时迁移进度条
  *  C. 点击漂移：P() 里检测 stale u（目标不一致时丢弃），F 分支用 a 而非 r
  *  D. 兼容事件：fireEvents 同时触发 page:view / swup:page:view / astro:page-load / astro:after-swap
+ *  E. 进度条回退重启：fetch 完成回调进入 P() 命中缓存分支时不再 C.start()，
+ *     避免"进度条走到一半被拉回 0 再重走一遍"的现象（P 增加 fromFetch 参数）
  */
 var InstantClick = function (d, e) {
 
@@ -448,7 +450,10 @@ var InstantClick = function (d, e) {
                 }
                 _trimCache();
             } else F = true;
-            m && (m = !1, P(r))
+
+            // 【修复 E】fetch 完成后进入 P 时标记 fromFetch=true，
+            // 让 P 的缓存命中分支不再 C.start()/t("wait")，避免进度条重启。
+            m && (m = !1, P(r, true))
         }
     }
 
@@ -459,8 +464,8 @@ var InstantClick = function (d, e) {
         (v = !0, m = !1, r = a, F = u = !1, q = { start: +new Date }, t("fetch"), p.open("GET", a), p.send())
     }
 
-    // ================= 导航入口（修复点击漂移）=================
-    function P(a) {
+    // ================= 导航入口（修复点击漂移 + 修复进度条重启）=================
+    function P(a, fromFetch) {
         if (animating) return;
         "display" in q || (q.display = +new Date - q.start);
 
@@ -475,8 +480,14 @@ var InstantClick = function (d, e) {
             m = v = false;
             u = false;
             h[_w].lastUsed = +new Date();
-            C.start(0, true);
-            t("wait");
+
+            // 【修复 E】只有"用户真实点击/预取后点击"这条路径才启动进度条；
+            // fetch 完成回调这条路径进度条已经在第 1 次 start 里跑着了，不再重启。
+            if (!fromFetch) {
+                C.start(0, true);
+                t("wait");
+            }
+
             performReplace(h[_w].body.cloneNode(true), h[_w].title, a, 0, false);
             return;
         }
