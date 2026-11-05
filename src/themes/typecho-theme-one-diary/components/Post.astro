@@ -437,6 +437,9 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
   <!-- 播放器脚本（先加载，确保 customElements 就绪） -->
   <script is:inline src="/js/mood-player.min.js"></script>
 
+
+<script src="/js/instantclick.js" data-no-instant></script>
+<script data-no-instant>InstantClick.init();</script>
   <!-- 全局吸附播放器：搬迁逻辑 + 吸附条，位于内容之外，切页不被 Swup 替换 -->
   <GlobalPlayer />
   <ThemeScripts siteTitle={options.title} />
