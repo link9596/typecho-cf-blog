@@ -1,7 +1,7 @@
 /* InstantClick 3.1.0 (enhanced) | (C) 2014 Alexandre Dieulot | http://instantclick.io/license
- * 改造1：持久内存缓存复用（Swup 风格）
- * 改造2：容器级局部替换 + 只对变化容器动画（路径3）
- * 改造3：三阶段动画类 ic-out / ic-changing / ic-in，CSS 可覆盖
+ * 改造1：持久内存缓存复用
+ * 改造2：容器级局部替换 + CSS transition 驱动动画（对齐 Swup 3.x）
+ * 改造3：Swup 兼容类名 is-changing / is-animating / is-leaving / transition-fade
  * 改造4：切换后滚动策略（instant / smooth / keep）
  * 改造5：可配置 API + prefers-reduced-motion 支持
  */
@@ -10,22 +10,83 @@ var InstantClick = function (d, e) {
     // ================= 配置 =================
     var CONFIG = {
         animation: true,
+        theme: 'fade',
         duration: 250,
         easing: 'ease',
-        scroll: 'instant',            // 'instant' | 'smooth' | 'keep'
+        scroll: 'smooth',
         respectReducedMotion: true,
         cacheMax: 30,
-        containers: ['#main', '#secondary', '#header', '#footer'],
+        containers: [{ selector: 'body', animation: 'auto' }]
     };
 
     var prefersReducedMotion =
         typeof matchMedia !== 'undefined' &&
         matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // ================= 状态 =================
     var animating = false;
 
-    // ================= LRU 修剪 =================
+    // ================= 工具 =================
+    function w(a) { var b = a.indexOf("#"); return 0 > b ? a : a.substr(0, b) }
+    function z(a) { for (; a && "A" != a.nodeName;) a = a.parentNode; return a }
+
+    function normalizeContainers(list) {
+        return list.map(function (item) {
+            if (typeof item === 'string') return { selector: item, animation: 'auto' };
+            if (item && item.selector) return { selector: item.selector, animation: item.animation || 'auto' };
+            return null;
+        }).filter(Boolean);
+    }
+
+    function hasTransitionClass(el) {
+        return /(^|\s)transition-/.test(el.className || '');
+    }
+
+    // 读取元素的计算过渡/动画时长（Swup 用 transition，兼容 animation）
+    function measureDuration(el) {
+        try {
+            var cs = getComputedStyle(el);
+            var max = 0;
+            var groups = [
+                { dur: cs.transitionDuration, delay: cs.transitionDelay },
+                { dur: cs.animationDuration, delay: cs.animationDelay }
+            ];
+            groups.forEach(function (g) {
+                var durs = (g.dur || '0s').split(',');
+                var dels = (g.delay || '0s').split(',');
+                for (var i = 0; i < durs.length; i++) {
+                    var d = (parseFloat(durs[i]) || 0) + (parseFloat(dels[i] || dels[0] || '0s') || 0);
+                    if (d * 1000 > max) max = d * 1000;
+                }
+            });
+            return max;
+        } catch (_) { return 0; }
+    }
+
+    function waitForAnim(el) {
+        return new Promise(function (resolve) {
+            var done = false;
+            var finish = function () {
+                if (done) return;
+                done = true;
+                el.removeEventListener('transitionend', onEnd);
+                el.removeEventListener('animationend', onEnd);
+                resolve();
+            };
+            var onEnd = function (ev) { if (ev.target === el) finish(); };
+            el.addEventListener('transitionend', onEnd);
+            el.addEventListener('animationend', onEnd);
+        });
+    }
+
+    function raceWithTimeout(promises, ms) {
+        return new Promise(function (resolve) {
+            var done = false;
+            var finish = function () { if (!done) { done = true; resolve(); } };
+            Promise.all(promises).then(finish);
+            setTimeout(finish, ms);
+        });
+    }
+
     function _trimCache() {
         var ks = Object.keys(h);
         if (ks.length <= CONFIG.cacheMax) return;
@@ -38,9 +99,6 @@ var InstantClick = function (d, e) {
         }
     }
 
-    // ================= 基础工具 =================
-    function w(a) { var b = a.indexOf("#"); return 0 > b ? a : a.substr(0, b) }
-    function z(a) { for (; a && "A" != a.nodeName;) a = a.parentNode; return a }
     function A(a) {
         var b = e.protocol + "//" + e.host;
         if (!(b = a.target || a.hasAttribute("download") || 0 != a.href.indexOf(b + "/") || -1 < a.href.indexOf("#") && w(a.href) == k)) {
@@ -66,6 +124,7 @@ var InstantClick = function (d, e) {
         }
         return b ? !1 : !0
     }
+
     function t(a, b, c, g) {
         for (var d = !1, e = 0; e < B[a].length; e++)
             if ("receive" == a) {
@@ -75,7 +134,7 @@ var InstantClick = function (d, e) {
         return d
     }
 
-    // ================= 滚动工具 =================
+    // ================= 滚动 =================
     function doScroll(top, behavior) {
         if (behavior === 'smooth') {
             try { window.scrollTo({ top: top, left: 0, behavior: 'smooth' }); }
@@ -89,21 +148,18 @@ var InstantClick = function (d, e) {
         window.scrollTo(0, top);
         html.style.scrollBehavior = prev;
     }
-
     function scrollToElement(el, behavior) {
         var top = 0, cur = el;
         while (cur.offsetParent) { top += cur.offsetTop; cur = cur.offsetParent; }
         doScroll(top, behavior);
     }
 
-    // ================= 监听器绑定（仅 body 替换时需要重新调用）=================
+    // ================= 监听器 / 脚本 =================
     function bindBodyListeners() {
         d.body.addEventListener("touchstart", U, !0);
         D ? d.body.addEventListener("mousedown", M, !0) : d.body.addEventListener("mouseover", N, !0);
         d.body.addEventListener("click", V, !0);
     }
-
-    // ================= 脚本重建（可指定 scope）=================
     function rebuildScripts(scope) {
         var scripts = scope.getElementsByTagName("script");
         var b, c, g, e2;
@@ -121,109 +177,42 @@ var InstantClick = function (d, e) {
         }
     }
 
-    // ================= 动画工具 =================
-    function isAnimationEnabled() {
-        return CONFIG.animation && !(CONFIG.respectReducedMotion && prefersReducedMotion);
-    }
-
-    function getMaxAnimDuration(elements) {
-        var max = CONFIG.duration;
-        try {
-            elements.forEach(function (el) {
-                var cs = getComputedStyle(el);
-                var durs = (cs.animationDuration || '0s').split(',').map(function (v) {
-                    var n = parseFloat(v);
-                    return isNaN(n) ? 0 : n * 1000;
-                });
-                var dd = Math.max.apply(null, durs.concat([0]));
-                if (dd > max) max = dd;
-            });
-        } catch (_) {}
-        return max;
-    }
-
-    function applyLeaveClass(els) {
-        els.forEach(function (el) { el.classList.add('ic-out'); });
-    }
-    function applyEnterClass(els) {
-        els.forEach(function (el) { el.classList.add('ic-in'); });
-    }
-
-    function awaitLeave(els, callback) {
-        if (!els.length) { callback(); return; }
-        var remaining = els.length, done = false, listeners = [];
-        var finish = function () {
-            if (done) return;
-            done = true;
-            listeners.forEach(function (p) { p[0].removeEventListener('animationend', p[1]); });
-            els.forEach(function (el) { el.classList.remove('ic-out'); });
-            callback();
-        };
-        els.forEach(function (el) {
-            var handler = function (ev) {
-                if (ev.target === el) {
-                    remaining--;
-                    if (remaining <= 0) finish();
-                }
-            };
-            el.addEventListener('animationend', handler);
-            listeners.push([el, handler]);
-        });
-        setTimeout(finish, getMaxAnimDuration(els) + 120);
-    }
-
-    function awaitEnter(els, callback) {
-        if (!els.length) { callback(); return; }
-        var remaining = els.length, done = false, listeners = [];
-        var finish = function () {
-            if (done) return;
-            done = true;
-            listeners.forEach(function (p) { p[0].removeEventListener('animationend', p[1]); });
-            els.forEach(function (el) { el.classList.remove('ic-in'); });
-            callback();
-        };
-        els.forEach(function (el) {
-            var handler = function (ev) {
-                if (ev.target === el) {
-                    remaining--;
-                    if (remaining <= 0) finish();
-                }
-            };
-            el.addEventListener('animationend', handler);
-            listeners.push([el, handler]);
-        });
-        setTimeout(finish, getMaxAnimDuration(els) + 120);
-    }
-
-    // ================= 核心：容器级替换 =================
+    // ================= 核心：容器级替换 + Swup 状态类 =================
     function performReplace(newBody, title, url, scrollY, isPopstate) {
         var html = d.documentElement;
-        var useAnim = isAnimationEnabled();
-        var isFullBody = CONFIG.containers.length === 1 && CONFIG.containers[0] === 'body';
+        var useAnim = CONFIG.animation && !(CONFIG.respectReducedMotion && prefersReducedMotion);
+        var isFullBody = CONFIG.containers.length === 1 && CONFIG.containers[0].selector === 'body';
 
-        // ---- 1. 计算替换列表 ----
+        // ---- 1. 收集需要替换的容器 ----
         var replacements = [];
-
         if (isFullBody) {
-            replacements.push({ oldEl: d.body, newEl: newBody, isBody: true });
+            replacements.push({
+                oldEl: d.body, newEl: newBody, isBody: true,
+                animation: CONFIG.containers[0].animation, addedClass: false
+            });
         } else {
             var foundAny = false;
-            CONFIG.containers.forEach(function (sel) {
-                var oldEl = d.body.querySelector(sel);
-                var newEl = newBody.querySelector(sel);
-                if (!oldEl || !newEl) return;                       // 容器不存在，跳过
+            CONFIG.containers.forEach(function (cfg) {
+                var oldEl = d.body.querySelector(cfg.selector);
+                var newEl = newBody.querySelector(cfg.selector);
+                if (!oldEl || !newEl) return;
                 foundAny = true;
-                if (oldEl.innerHTML === newEl.innerHTML) return;    // 内容一致，不替换
-                replacements.push({ oldEl: oldEl, newEl: newEl, isBody: false });
+                if (oldEl.innerHTML === newEl.innerHTML) return;
+                replacements.push({
+                    oldEl: oldEl, newEl: newEl, isBody: false,
+                    animation: cfg.animation, addedClass: false
+                });
             });
-            // 配置的容器全部找不到 → fallback 到整 body
             if (!foundAny) {
-                replacements.push({ oldEl: d.body, newEl: newBody, isBody: true });
+                replacements.push({
+                    oldEl: d.body, newEl: newBody, isBody: true,
+                    animation: 'auto', addedClass: false
+                });
                 isFullBody = true;
             }
         }
 
-        // ---- 2. 公共 meta 更新逻辑 ----
+        // ---- 2. 公共回调 ----
         var updateMeta = function () {
             if (!isPopstate && url) {
                 history.pushState(null, null, url);
@@ -231,7 +220,6 @@ var InstantClick = function (d, e) {
             }
             d.title = S && d.title == title ? title + String.fromCharCode(160) : title;
         };
-
         var applyScroll = function () {
             var hash = null;
             if (url) {
@@ -248,7 +236,6 @@ var InstantClick = function (d, e) {
                 doScroll(0, CONFIG.scroll);
             }
         };
-
         var fireEvents = function () {
             C.done();
             t("change", false);
@@ -257,24 +244,48 @@ var InstantClick = function (d, e) {
             dispatchEvent(ev);
         };
 
-        // ---- 3. 局部模式下所有容器都没变化 ----
+        // ---- 3. 无替换 → 只更新 meta ----
         if (replacements.length === 0) {
-            updateMeta();
-            applyScroll();
-            fireEvents();
+            updateMeta(); applyScroll(); fireEvents();
             animating = false;
             return;
         }
 
-        // ---- 4. 实际 DOM 替换 ----
-        var doReplace = function () {
+        // ---- 4. theme: fade 时给变化容器补 transition-fade ----
+        if (useAnim && CONFIG.theme === 'fade') {
             replacements.forEach(function (r) {
-                if (r.isBody) {
-                    d.documentElement.replaceChild(r.newEl, r.oldEl);
-                } else {
-                    r.oldEl.parentNode.replaceChild(r.newEl, r.oldEl);
-                }
+                if (r.animation === 'none') return;
+                if (hasTransitionClass(r.oldEl)) return;
+                r.oldEl.classList.add('transition-fade');
+                r.addedClass = true;
             });
+        }
+
+        // ---- 5. 测离场时长 ----
+        var maxLeave = 0;
+        if (useAnim) {
+            replacements.forEach(function (r) {
+                if (r.animation === 'none') return;
+                var dur = measureDuration(r.oldEl);
+                if (dur > maxLeave) maxLeave = dur;
+            });
+        }
+
+        // ---- 6. 执行替换（离场结束 / 无动画时调用）----
+        var doReplace = function () {
+            // 给 newEl 补 transition-fade
+            replacements.forEach(function (r) {
+                if (r.addedClass && r.newEl) r.newEl.classList.add('transition-fade');
+            });
+
+            // DOM 替换
+            replacements.forEach(function (r) {
+                if (r.isBody) d.documentElement.replaceChild(r.newEl, r.oldEl);
+                else r.oldEl.parentNode.replaceChild(r.newEl, r.oldEl);
+            });
+
+            html.classList.remove('is-leaving');
+
             updateMeta();
             applyScroll();
 
@@ -284,30 +295,63 @@ var InstantClick = function (d, e) {
             } else {
                 replacements.forEach(function (r) { rebuildScripts(r.newEl); });
             }
+
             fireEvents();
+
+            // ---- 入场 ----
+            if (useAnim) {
+                void d.body.offsetWidth;                // 强制重排，确保 transition 触发
+                html.classList.remove('is-animating');  // 反向过渡开始
+
+                var maxEnter = 0;
+                var enterWaiters = [];
+                replacements.forEach(function (r) {
+                    if (r.animation === 'none') return;
+                    if (!r.newEl || !r.newEl.isConnected) return;
+                    var dur = measureDuration(r.newEl);
+                    if (dur > maxEnter) maxEnter = dur;
+                    if (dur > 0) enterWaiters.push(waitForAnim(r.newEl));
+                });
+
+                var finishEnter = function () {
+                    html.classList.remove('is-changing');
+                    replacements.forEach(function (r) {
+                        if (r.addedClass && r.newEl) r.newEl.classList.remove('transition-fade');
+                    });
+                    animating = false;
+                };
+
+                if (maxEnter > 0) {
+                    raceWithTimeout(enterWaiters, maxEnter + 120).then(finishEnter);
+                } else {
+                    finishEnter();
+                }
+            } else {
+                html.classList.remove('is-changing');
+                animating = false;
+            }
         };
 
-        // ---- 5. 动画编排 ----
+        // ---- 7. 编排 ----
         if (useAnim) {
             animating = true;
-            html.classList.add('ic-changing');
+            html.classList.add('is-changing');
+            html.classList.add('is-animating');
+            html.classList.add('is-leaving');
+            void d.body.offsetWidth;
 
-            var oldEls = replacements.map(function (r) { return r.oldEl; });
-            var newEls = replacements.map(function (r) { return r.newEl; });
-
-            applyLeaveClass(oldEls);
-
-            awaitLeave(oldEls, function () {
-                applyEnterClass(newEls);       // 插入前加 ic-in，配合 both fill-mode 防闪烁
-                doReplace();
-                awaitEnter(newEls, function () {
-                    html.classList.remove('ic-changing');
-                    animating = false;
+            if (maxLeave > 0) {
+                var leaveWaiters = [];
+                replacements.forEach(function (r) {
+                    if (r.animation === 'none') return;
+                    if (measureDuration(r.oldEl) > 0) leaveWaiters.push(waitForAnim(r.oldEl));
                 });
-            });
+                raceWithTimeout(leaveWaiters, maxLeave + 120).then(doReplace);
+            } else {
+                doReplace();
+            }
         } else {
             doReplace();
-            animating = false;
         }
     }
 
@@ -341,17 +385,14 @@ var InstantClick = function (d, e) {
                 doc.documentElement.innerHTML = p.responseText.replace(/<noscript[\s\S]+<\/noscript>/gi, "");
                 y = doc.title;
                 u = doc.body;
-
                 var override = t("receive", r, u, y);
                 override && ("body" in override && (u = override.body), "title" in override && (y = override.title));
 
                 var key = w(r);
                 h[key] = {
-                    body: u,
-                    title: y,
+                    body: u, title: y,
                     scrollY: key in h ? h[key].scrollY : 0,
-                    lastUsed: +new Date(),
-                    invalid: false
+                    lastUsed: +new Date(), invalid: false
                 };
 
                 var head = doc.head.children, cnt = 0, c;
@@ -383,15 +424,12 @@ var InstantClick = function (d, e) {
         "display" in q || (q.display = +new Date - q.start);
 
         var _w = w(a);
-
-        // 缓存命中
         if (_w in h && h[_w].body) {
             if (h[_w].invalid) { e.href = _w; return; }
             if (v && p) { try { p.abort(); } catch (_) {} }
             if (k in h) h[k].scrollY = pageYOffset;
             if (l) { clearTimeout(l); l = false; }
-            m = v = false;
-            u = false;
+            m = v = false; u = false;
             h[_w].lastUsed = +new Date();
             C.start(0, true);
             t("wait");
@@ -399,7 +437,6 @@ var InstantClick = function (d, e) {
             return;
         }
 
-        // 原逻辑
         l || !v
             ? l && r && r != a
                 ? e.href = a
@@ -437,18 +474,9 @@ var InstantClick = function (d, e) {
                 l = setTimeout(c, 500)
             }
             function b() { n = 10; g() }
-            function c() {
-                n += 1 + 2 * Math.random();
-                98 <= n ? n = 98 : l = setTimeout(c, 500);
-                g()
-            }
-            function g() {
-                h.style[k] = "translate(" + n + "%)";
-                d.getElementById(f.id) || d.body.appendChild(f)
-            }
-            function e() {
-                d.getElementById(f.id) ? (clearTimeout(l), n = 100, g(), f.style.opacity = "0") : (a(100 == n ? 0 : n), setTimeout(e, 0))
-            }
+            function c() { n += 1 + 2 * Math.random(); 98 <= n ? n = 98 : l = setTimeout(c, 500); g() }
+            function g() { h.style[k] = "translate(" + n + "%)"; d.getElementById(f.id) || d.body.appendChild(f) }
+            function e() { d.getElementById(f.id) ? (clearTimeout(l), n = 100, g(), f.style.opacity = "0") : (a(100 == n ? 0 : n), setTimeout(e, 0)) }
             function m() {
                 f.style.left = pageXOffset + "px";
                 f.style.width = innerWidth + "px";
@@ -459,43 +487,32 @@ var InstantClick = function (d, e) {
             var f, h, k, n, l;
             return {
                 init: function () {
-                    f = d.createElement("div");
-                    f.id = "instantclick";
-                    h = d.createElement("div");
-                    h.id = "instantclick-bar";
-                    h.className = "instantclick-bar";
-                    f.appendChild(h);
-                    var a = ["Webkit", "Moz", "O"];
-                    k = "transform";
-                    if (!(k in h.style))
-                        for (var b = 0; 3 > b; b++) a[b] + "Transform" in h.style && (k = a[b] + "Transform");
+                    f = d.createElement("div"); f.id = "instantclick";
+                    h = d.createElement("div"); h.id = "instantclick-bar"; h.className = "instantclick-bar"; f.appendChild(h);
+                    var a = ["Webkit", "Moz", "O"]; k = "transform";
+                    if (!(k in h.style)) for (var b = 0; 3 > b; b++) a[b] + "Transform" in h.style && (k = a[b] + "Transform");
                     var c = "transition";
-                    if (!(c in h.style))
-                        for (b = 0; 3 > b; b++) a[b] + "Transition" in h.style && (c = "-" + a[b].toLowerCase() + "-" + c);
+                    if (!(c in h.style)) for (b = 0; 3 > b; b++) a[b] + "Transition" in h.style && (c = "-" + a[b].toLowerCase() + "-" + c);
                     var st = d.createElement("style");
                     st.innerHTML = "#instantclick{position:" + (Q ? "absolute" : "fixed") + ";top:0;left:0;width:100%;pointer-events:none;z-index:2147483647;" + c + ":opacity .25s .1s}.instantclick-bar{background:#29d;width:100%;margin-left:-100%;height:2px;" + c + ":all .25s}";
                     d.head.appendChild(st);
                     Q && (m(), addEventListener("resize", m), addEventListener("scroll", m))
                 },
-                start: a,
-                done: e
+                start: a, done: e
             }
         }(),
         R = "pushState" in history && (!I.match("Android") || I.match("Chrome/")) && "file:" != e.protocol;
 
-    // ================= 默认动画 CSS 注入 =================
+    // ================= 默认 Swup 风格主题 CSS =================
     function injectAnimCSS() {
+        if (CONFIG.theme !== 'fade') return;
         if (d.getElementById('ic-anim-style')) return;
         var style = d.createElement('style');
         style.id = 'ic-anim-style';
         style.textContent = [
             ':root{--ic-anim-duration:' + CONFIG.duration + 'ms;--ic-anim-easing:' + CONFIG.easing + '}',
-            '@keyframes ic-out{to{opacity:0}}',
-            '@keyframes ic-in{from{opacity:0}to{opacity:1}}',
-            /* 通用选择器：兼容 body 替换和任意容器替换 */
-            '.ic-out{animation:ic-out var(--ic-anim-duration) var(--ic-anim-easing) forwards}',
-            '.ic-in{animation:ic-in var(--ic-anim-duration) var(--ic-anim-easing) both}',
-            'html.ic-changing{}'
+            '.transition-fade{transition:opacity var(--ic-anim-duration) var(--ic-anim-easing);opacity:1}',
+            'html.is-animating .transition-fade{opacity:0}'
         ].join('');
         d.head.appendChild(style);
     }
@@ -506,15 +523,16 @@ var InstantClick = function (d, e) {
         init: function () {
             for (var i = 0; i < arguments.length; i++) {
                 var arg = arguments[i];
-                if (arg && typeof arg === 'object') {
+                if (arg && typeof arg === 'object' && !(arg instanceof Array)) {
                     if ('animation' in arg) CONFIG.animation = !!arg.animation;
+                    if ('theme' in arg) CONFIG.theme = arg.theme;
                     if ('duration' in arg) CONFIG.duration = +arg.duration;
                     if ('easing' in arg) CONFIG.easing = String(arg.easing);
                     if ('scroll' in arg) CONFIG.scroll = String(arg.scroll);
                     if ('respectReducedMotion' in arg) CONFIG.respectReducedMotion = !!arg.respectReducedMotion;
                     if ('cacheMax' in arg) CONFIG.cacheMax = +arg.cacheMax;
                     if ('containers' in arg && Array.isArray(arg.containers) && arg.containers.length > 0) {
-                        CONFIG.containers = arg.containers.slice();
+                        CONFIG.containers = normalizeContainers(arg.containers);
                     }
                 } else if (arg === true) J = true;
                 else if (arg === 'mousedown') D = true;
@@ -525,6 +543,9 @@ var InstantClick = function (d, e) {
             if (!R) { t("change", true); return; }
 
             injectAnimCSS();
+
+            // 清理残留状态类（应对热重载）
+            d.documentElement.classList.remove('is-changing', 'is-animating', 'is-leaving');
 
             k = w(e.href);
             h[k] = {
@@ -579,13 +600,14 @@ var InstantClick = function (d, e) {
         configure: function (obj) {
             if (!obj) return CONFIG;
             if ('animation' in obj) CONFIG.animation = !!obj.animation;
+            if ('theme' in obj) CONFIG.theme = obj.theme;
             if ('duration' in obj) CONFIG.duration = +obj.duration;
             if ('easing' in obj) CONFIG.easing = String(obj.easing);
             if ('scroll' in obj) CONFIG.scroll = String(obj.scroll);
             if ('respectReducedMotion' in obj) CONFIG.respectReducedMotion = !!obj.respectReducedMotion;
             if ('cacheMax' in obj) CONFIG.cacheMax = +obj.cacheMax;
             if ('containers' in obj && Array.isArray(obj.containers) && obj.containers.length > 0) {
-                CONFIG.containers = obj.containers.slice();
+                CONFIG.containers = normalizeContainers(obj.containers);
             }
             return CONFIG;
         }
