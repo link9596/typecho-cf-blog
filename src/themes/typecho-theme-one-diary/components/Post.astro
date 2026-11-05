@@ -434,6 +434,9 @@ const submittedPassword = Astro.url.searchParams.get('password') || '';
 
   </div>
 
+<script src="/js/instantclick.js" data-no-instant></script>
+<script data-no-instant>InstantClick.init();</script>
+
   <!-- 播放器脚本（先加载，确保 customElements 就绪） -->
   <script is:inline src="/js/mood-player.min.js"></script>
 
