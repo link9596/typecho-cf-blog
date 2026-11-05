@@ -245,9 +245,21 @@ html.snowi-dark .snowi-page .nav-item.active {
 .snowi-page .card-overlay {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 10;
   display: block;
   border-radius: 16px;
+}
+
+/* 将独立交互的组件层级拔高，防止误触跳转 */
+.snowi-page .post-header a,
+.snowi-page .post-actions,
+.snowi-page .post-text a,
+.snowi-page .post-text mood-player,
+.snowi-page .post-media,
+.snowi-page .post-media-grid,
+.snowi-page .live-photo {
+  position: relative;
+  z-index: 20;
 }
 
 /* ==========================================================================
