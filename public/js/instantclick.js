@@ -17,12 +17,7 @@ var InstantClick = function (d, e) {
         scroll: 'smooth',
         respectReducedMotion: true,
         cacheMax: 30,
-        containers: containers: [
-    '#main',
-    { selector: '#header',    animation: 'none' },  // 即使 CSS 写了动画也跳过
-    { selector: '#secondary', animation: 'auto' },  // 默认：CSS 驱动
-    '#footer'
-  ]
+        containers: [{ selector: 'body', animation: 'auto' }]
     };
 
     var prefersReducedMotion =
