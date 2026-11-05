@@ -918,20 +918,6 @@ const { siteTitle = '' } = Astro.props;
 
       var shareBtn = target.closest('.share-btn');
       if (shareBtn) { e.preventDefault(); handleShare(shareBtn); return; }
-
-      var card = target.closest('.post-card');
-      if (!card) return;
-      var cardOverlay = card.querySelector('.card-overlay');
-      if (!cardOverlay) return;
-      if (target.closest('a, button, input, textarea, select, label, form, video, audio, mood-player, .post-actions, .post-media, .post-media-grid, .live-photo, .post-category, .post-tags, .lightbox-img')) return;
-      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-
-      var selection = '';
-      try { selection = String(window.getSelection ? window.getSelection() : ''); } catch (err) {}
-      if (selection) return;
-
-      e.preventDefault();
-      cardOverlay.click();
     });
 
     /* ================= Astro 切页 ================= */
