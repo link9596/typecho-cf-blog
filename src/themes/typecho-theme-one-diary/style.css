@@ -52,6 +52,11 @@ html.snowi-dark {
   --accent-color: #dcdcdc;
 }
 
+#instantclick-bar{
+background:#ffffff;height:2px;
+box-shadow:0 0 6px 1px rgba(255,255,255,0.9)
+}
+
 .snowi-page {
   background-color: var(--bg-color);
   font-family: var(--font-sans);
