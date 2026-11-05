@@ -16,12 +16,7 @@ var InstantClick = function (d, e) {
         scroll: 'smooth',
         respectReducedMotion: true,
         cacheMax: 30,
-        containers: [
-    '#main',
-    { selector: '#header',    animation: 'none' },
-    { selector: '#secondary', animation: 'auto' },
-    '#footer'
-  ]
+        containers: [{ selector: 'body', animation: 'auto' }]
     };
 
     var prefersReducedMotion =
@@ -46,7 +41,7 @@ var InstantClick = function (d, e) {
         return /(^|\s)transition-/.test(el.className || '');
     }
 
-    // 读取元素的计算过渡/动画时长（Swup 用 transition，兼容 animation）
+    // 读取元素的计算过渡/动画时长
     function measureDuration(el) {
         try {
             var cs = getComputedStyle(el);
@@ -83,11 +78,23 @@ var InstantClick = function (d, e) {
         });
     }
 
+    // 关键：保证 Promise 链不会因为抛异常而中止
+    function safeThen(promise, cb) {
+        return promise.then(function () {
+            try { cb(); } catch (err) {
+                // 兜底：即使回调出错也要释放动画锁，避免"页面点不动"
+                d.documentElement.classList.remove('is-changing', 'is-animating', 'is-leaving');
+                animating = false;
+                if (typeof console !== 'undefined') console.error('[InstantClick] transition callback error:', err);
+            }
+        });
+    }
+
     function raceWithTimeout(promises, ms) {
         return new Promise(function (resolve) {
             var done = false;
             var finish = function () { if (!done) { done = true; resolve(); } };
-            Promise.all(promises).then(finish);
+            Promise.all(promises).then(finish, finish);
             setTimeout(finish, ms);
         });
     }
@@ -276,14 +283,12 @@ var InstantClick = function (d, e) {
             });
         }
 
-        // ---- 6. 执行替换（离场结束 / 无动画时调用）----
+        // ---- 6. 执行替换 ----
         var doReplace = function () {
-            // 给 newEl 补 transition-fade
             replacements.forEach(function (r) {
                 if (r.addedClass && r.newEl) r.newEl.classList.add('transition-fade');
             });
 
-            // DOM 替换
             replacements.forEach(function (r) {
                 if (r.isBody) d.documentElement.replaceChild(r.newEl, r.oldEl);
                 else r.oldEl.parentNode.replaceChild(r.newEl, r.oldEl);
@@ -305,8 +310,8 @@ var InstantClick = function (d, e) {
 
             // ---- 入场 ----
             if (useAnim) {
-                void d.body.offsetWidth;                // 强制重排，确保 transition 触发
-                html.classList.remove('is-animating');  // 反向过渡开始
+                void d.body.offsetWidth;
+                html.classList.remove('is-animating');
 
                 var maxEnter = 0;
                 var enterWaiters = [];
@@ -327,7 +332,7 @@ var InstantClick = function (d, e) {
                 };
 
                 if (maxEnter > 0) {
-                    raceWithTimeout(enterWaiters, maxEnter + 120).then(finishEnter);
+                    safeThen(raceWithTimeout(enterWaiters, maxEnter + 120), finishEnter);
                 } else {
                     finishEnter();
                 }
@@ -351,7 +356,7 @@ var InstantClick = function (d, e) {
                     if (r.animation === 'none') return;
                     if (measureDuration(r.oldEl) > 0) leaveWaiters.push(waitForAnim(r.oldEl));
                 });
-                raceWithTimeout(leaveWaiters, maxLeave + 120).then(doReplace);
+                safeThen(raceWithTimeout(leaveWaiters, maxLeave + 120), doReplace);
             } else {
                 doReplace();
             }
