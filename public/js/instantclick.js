@@ -1,8 +1,9 @@
-/* InstantClick 3.1.0 (enhanced + animation) | (C) 2014 Alexandre Dieulot | http://instantclick.io/license
+/* InstantClick 3.1.0 (enhanced) | (C) 2014 Alexandre Dieulot | http://instantclick.io/license
  * 改造1：持久内存缓存复用（Swup 风格）
- * 改造2：三阶段动画类 ic-out / ic-changing / ic-in，CSS 可覆盖
- * 改造3：切换后滚动策略（instant / smooth / keep）
- * 改造4：可配置 API + prefers-reduced-motion 支持
+ * 改造2：容器级局部替换 + 只对变化容器动画（路径3）
+ * 改造3：三阶段动画类 ic-out / ic-changing / ic-in，CSS 可覆盖
+ * 改造4：切换后滚动策略（instant / smooth / keep）
+ * 改造5：可配置 API + prefers-reduced-motion 支持
  */
 var InstantClick = function (d, e) {
 
@@ -13,7 +14,8 @@ var InstantClick = function (d, e) {
         easing: 'ease',
         scroll: 'instant',            // 'instant' | 'smooth' | 'keep'
         respectReducedMotion: true,
-        cacheMax: 30
+        cacheMax: 30,
+        containers: ['#main','#secondary','#header']
     };
 
     var prefersReducedMotion =
@@ -94,98 +96,218 @@ var InstantClick = function (d, e) {
         doScroll(top, behavior);
     }
 
-    // ================= 核心：页面切换 =================
-    function K(title, newBody, url, scrollY, opts) {
-        opts = opts || {};
-        var isPopstate = !!opts.popstate;
-        var useAnimation = CONFIG.animation && !(CONFIG.respectReducedMotion && prefersReducedMotion);
-        var html = d.documentElement;
+    // ================= 监听器绑定（仅 body 替换时需要重新调用）=================
+    function bindBodyListeners() {
+        d.body.addEventListener("touchstart", U, !0);
+        D ? d.body.addEventListener("mousedown", M, !0) : d.body.addEventListener("mouseover", N, !0);
+        d.body.addEventListener("click", V, !0);
+    }
 
-        function clearChanging() {
-            html.classList.remove('ic-changing');
-            animating = false;
+    // ================= 脚本重建（可指定 scope）=================
+    function rebuildScripts(scope) {
+        var scripts = scope.getElementsByTagName("script");
+        var b, c, g, e2;
+        var i = 0, j = scripts.length;
+        for (; i < j; i++) {
+            b = scripts[i];
+            if (b.hasAttribute("data-no-instant")) continue;
+            c = d.createElement("script");
+            if (b.src) c.src = b.src;
+            if (b.innerHTML) c.innerHTML = b.innerHTML;
+            g = b.parentNode;
+            e2 = b.nextSibling;
+            g.removeChild(b);
+            g.insertBefore(c, e2);
+        }
+    }
+
+    // ================= 动画工具 =================
+    function isAnimationEnabled() {
+        return CONFIG.animation && !(CONFIG.respectReducedMotion && prefersReducedMotion);
+    }
+
+    function getMaxAnimDuration(elements) {
+        var max = CONFIG.duration;
+        try {
+            elements.forEach(function (el) {
+                var cs = getComputedStyle(el);
+                var durs = (cs.animationDuration || '0s').split(',').map(function (v) {
+                    var n = parseFloat(v);
+                    return isNaN(n) ? 0 : n * 1000;
+                });
+                var dd = Math.max.apply(null, durs.concat([0]));
+                if (dd > max) max = dd;
+            });
+        } catch (_) {}
+        return max;
+    }
+
+    function applyLeaveClass(els) {
+        els.forEach(function (el) { el.classList.add('ic-out'); });
+    }
+    function applyEnterClass(els) {
+        els.forEach(function (el) { el.classList.add('ic-in'); });
+    }
+
+    function awaitLeave(els, callback) {
+        if (!els.length) { callback(); return; }
+        var remaining = els.length, done = false, listeners = [];
+        var finish = function () {
+            if (done) return;
+            done = true;
+            listeners.forEach(function (p) { p[0].removeEventListener('animationend', p[1]); });
+            els.forEach(function (el) { el.classList.remove('ic-out'); });
+            callback();
+        };
+        els.forEach(function (el) {
+            var handler = function (ev) {
+                if (ev.target === el) {
+                    remaining--;
+                    if (remaining <= 0) finish();
+                }
+            };
+            el.addEventListener('animationend', handler);
+            listeners.push([el, handler]);
+        });
+        setTimeout(finish, getMaxAnimDuration(els) + 120);
+    }
+
+    function awaitEnter(els, callback) {
+        if (!els.length) { callback(); return; }
+        var remaining = els.length, done = false, listeners = [];
+        var finish = function () {
+            if (done) return;
+            done = true;
+            listeners.forEach(function (p) { p[0].removeEventListener('animationend', p[1]); });
+            els.forEach(function (el) { el.classList.remove('ic-in'); });
+            callback();
+        };
+        els.forEach(function (el) {
+            var handler = function (ev) {
+                if (ev.target === el) {
+                    remaining--;
+                    if (remaining <= 0) finish();
+                }
+            };
+            el.addEventListener('animationend', handler);
+            listeners.push([el, handler]);
+        });
+        setTimeout(finish, getMaxAnimDuration(els) + 120);
+    }
+
+    // ================= 核心：容器级替换 =================
+    function performReplace(newBody, title, url, scrollY, isPopstate) {
+        var html = d.documentElement;
+        var useAnim = isAnimationEnabled();
+        var isFullBody = CONFIG.containers.length === 1 && CONFIG.containers[0] === 'body';
+
+        // ---- 1. 计算替换列表 ----
+        var replacements = [];
+
+        if (isFullBody) {
+            replacements.push({ oldEl: d.body, newEl: newBody, isBody: true });
+        } else {
+            var foundAny = false;
+            CONFIG.containers.forEach(function (sel) {
+                var oldEl = d.body.querySelector(sel);
+                var newEl = newBody.querySelector(sel);
+                if (!oldEl || !newEl) return;                       // 容器不存在，跳过
+                foundAny = true;
+                if (oldEl.innerHTML === newEl.innerHTML) return;    // 内容一致，不替换
+                replacements.push({ oldEl: oldEl, newEl: newEl, isBody: false });
+            });
+            // 配置的容器全部找不到 → fallback 到整 body
+            if (!foundAny) {
+                replacements.push({ oldEl: d.body, newEl: newBody, isBody: true });
+                isFullBody = true;
+            }
         }
 
-        function doReplace() {
+        // ---- 2. 公共 meta 更新逻辑 ----
+        var updateMeta = function () {
+            if (!isPopstate && url) {
+                history.pushState(null, null, url);
+                k = w(url);
+            }
+            d.title = S && d.title == title ? title + String.fromCharCode(160) : title;
+        };
+
+        var applyScroll = function () {
             var hash = null;
             if (url) {
                 var hi = url.indexOf("#");
                 if (hi > -1) hash = url.substr(hi + 1);
             }
-
-            // 入场类在插入前加，配合 both fill-mode 防闪烁
-            if (useAnimation) newBody.classList.add('ic-in');
-
-            d.documentElement.replaceChild(newBody, d.body);
-
-            if (!isPopstate && url) {
-                history.pushState(null, null, url);
-                k = w(url);
-            }
-
-            // 滚动
             if (hash) {
                 var el = d.getElementById(hash);
-                if (el) scrollToElement(el, useAnimation ? 'smooth' : CONFIG.scroll);
+                if (el) scrollToElement(el, useAnim ? 'smooth' : CONFIG.scroll);
                 else doScroll(0, CONFIG.scroll);
             } else if (isPopstate) {
                 doScroll(scrollY || 0, 'instant');
             } else {
                 doScroll(0, CONFIG.scroll);
             }
+        };
 
-            d.title = S && d.title == title ? title + String.fromCharCode(160) : title;
-
-            L();
+        var fireEvents = function () {
             C.done();
             t("change", false);
-
             var ev = d.createEvent("HTMLEvents");
             ev.initEvent("instantclick:newpage", !0, !0);
             dispatchEvent(ev);
+        };
 
-            // 入场收尾
-            if (useAnimation) {
-                var finished = false;
-                var finishEnter = function () {
-                    if (finished) return;
-                    finished = true;
-                    newBody.classList.remove('ic-in');
-                    newBody.removeEventListener('animationend', onEnterEnd);
-                    clearChanging();
-                };
-                var onEnterEnd = function (ev) {
-                    if (ev.target === newBody) finishEnter();
-                };
-                newBody.addEventListener('animationend', onEnterEnd);
-                setTimeout(finishEnter, CONFIG.duration + 120);
-            } else {
-                clearChanging();
-            }
+        // ---- 3. 局部模式下所有容器都没变化 ----
+        if (replacements.length === 0) {
+            updateMeta();
+            applyScroll();
+            fireEvents();
+            animating = false;
+            return;
         }
 
-        if (useAnimation) {
+        // ---- 4. 实际 DOM 替换 ----
+        var doReplace = function () {
+            replacements.forEach(function (r) {
+                if (r.isBody) {
+                    d.documentElement.replaceChild(r.newEl, r.oldEl);
+                } else {
+                    r.oldEl.parentNode.replaceChild(r.newEl, r.oldEl);
+                }
+            });
+            updateMeta();
+            applyScroll();
+
+            if (isFullBody) {
+                bindBodyListeners();
+                rebuildScripts(d.body);
+            } else {
+                replacements.forEach(function (r) { rebuildScripts(r.newEl); });
+            }
+            fireEvents();
+        };
+
+        // ---- 5. 动画编排 ----
+        if (useAnim) {
             animating = true;
-            html.classList.add('ic-changing');       // ← 全局切换中
+            html.classList.add('ic-changing');
 
-            var oldBody = d.body;
-            oldBody.classList.add('ic-out');         // ← 旧 body 离场
+            var oldEls = replacements.map(function (r) { return r.oldEl; });
+            var newEls = replacements.map(function (r) { return r.newEl; });
 
-            var left = false;
-            var finishLeave = function () {
-                if (left) return;
-                left = true;
-                oldBody.removeEventListener('animationend', onLeaveEnd);
-                oldBody.classList.remove('ic-out');
+            applyLeaveClass(oldEls);
+
+            awaitLeave(oldEls, function () {
+                applyEnterClass(newEls);       // 插入前加 ic-in，配合 both fill-mode 防闪烁
                 doReplace();
-            };
-            var onLeaveEnd = function (ev) {
-                if (ev.target === oldBody) finishLeave();
-            };
-            oldBody.addEventListener('animationend', onLeaveEnd);
-            setTimeout(finishLeave, CONFIG.duration + 120);
+                awaitEnter(newEls, function () {
+                    html.classList.remove('ic-changing');
+                    animating = false;
+                });
+            });
         } else {
             doReplace();
+            animating = false;
         }
     }
 
@@ -248,29 +370,6 @@ var InstantClick = function (d, e) {
         }
     }
 
-    // ================= script 重建 =================
-    function L(a) {
-        d.body.addEventListener("touchstart", U, !0);
-        D ? d.body.addEventListener("mousedown", M, !0) : d.body.addEventListener("mouseover", N, !0);
-        d.body.addEventListener("click", V, !0);
-        if (!a) {
-            var scripts = d.body.getElementsByTagName("script");
-            var b, c, g, e2;
-            var i = 0, j = scripts.length;
-            for (; i < j; i++) {
-                b = scripts[i];
-                if (b.hasAttribute("data-no-instant")) continue;
-                c = d.createElement("script");
-                if (b.src) c.src = b.src;
-                if (b.innerHTML) c.innerHTML = b.innerHTML;
-                g = b.parentNode;
-                e2 = b.nextSibling;
-                g.removeChild(b);
-                g.insertBefore(c, e2);
-            }
-        }
-    }
-
     // ================= 预取 =================
     function x(a) {
         !D && "display" in q && 100 > +new Date - (q.start + q.display) ||
@@ -296,7 +395,7 @@ var InstantClick = function (d, e) {
             h[_w].lastUsed = +new Date();
             C.start(0, true);
             t("wait");
-            K(h[_w].title, h[_w].body.cloneNode(true), a, 0);
+            performReplace(h[_w].body.cloneNode(true), h[_w].title, a, 0, false);
             return;
         }
 
@@ -312,7 +411,8 @@ var InstantClick = function (d, e) {
                     : u
                         ? (h[k].scrollY = pageYOffset,
                            m = v = false,
-                           K(y, u.cloneNode(true), r, (w(r) in h ? h[w(r)].scrollY : 0)))
+                           performReplace(u.cloneNode(true), y, r,
+                               (w(r) in h ? h[w(r)].scrollY : 0), false))
                         : (C.start(0, true), t("wait"), m = true);
     }
 
@@ -392,9 +492,9 @@ var InstantClick = function (d, e) {
             ':root{--ic-anim-duration:' + CONFIG.duration + 'ms;--ic-anim-easing:' + CONFIG.easing + '}',
             '@keyframes ic-out{to{opacity:0}}',
             '@keyframes ic-in{from{opacity:0}to{opacity:1}}',
-            'body.ic-out{animation:ic-out var(--ic-anim-duration) var(--ic-anim-easing) forwards}',
-            'body.ic-in{animation:ic-in var(--ic-anim-duration) var(--ic-anim-easing) both}',
-            /* ic-changing 只做标记，默认不给样式，避免影响现有交互 */
+            /* 通用选择器：兼容 body 替换和任意容器替换 */
+            '.ic-out{animation:ic-out var(--ic-anim-duration) var(--ic-anim-easing) forwards}',
+            '.ic-in{animation:ic-in var(--ic-anim-duration) var(--ic-anim-easing) both}',
             'html.ic-changing{}'
         ].join('');
         d.head.appendChild(style);
@@ -413,6 +513,9 @@ var InstantClick = function (d, e) {
                     if ('scroll' in arg) CONFIG.scroll = String(arg.scroll);
                     if ('respectReducedMotion' in arg) CONFIG.respectReducedMotion = !!arg.respectReducedMotion;
                     if ('cacheMax' in arg) CONFIG.cacheMax = +arg.cacheMax;
+                    if ('containers' in arg && Array.isArray(arg.containers) && arg.containers.length > 0) {
+                        CONFIG.containers = arg.containers.slice();
+                    }
                 } else if (arg === true) J = true;
                 else if (arg === 'mousedown') D = true;
                 else if (typeof arg === 'number') H = arg;
@@ -443,7 +546,7 @@ var InstantClick = function (d, e) {
 
             p = new XMLHttpRequest;
             p.addEventListener("readystatechange", W);
-            L(!0);
+            bindBodyListeners();
             C.init();
             t("change", true);
 
@@ -455,7 +558,7 @@ var InstantClick = function (d, e) {
                     h[k].scrollY = pageYOffset;
                     k = a;
                     h[a].lastUsed = +new Date();
-                    K(h[a].title, h[a].body.cloneNode(true), false, h[a].scrollY, { popstate: true });
+                    performReplace(h[a].body.cloneNode(true), h[a].title, false, h[a].scrollY, true);
                 } else {
                     e.href = e.href;
                 }
@@ -481,6 +584,9 @@ var InstantClick = function (d, e) {
             if ('scroll' in obj) CONFIG.scroll = String(obj.scroll);
             if ('respectReducedMotion' in obj) CONFIG.respectReducedMotion = !!obj.respectReducedMotion;
             if ('cacheMax' in obj) CONFIG.cacheMax = +obj.cacheMax;
+            if ('containers' in obj && Array.isArray(obj.containers) && obj.containers.length > 0) {
+                CONFIG.containers = obj.containers.slice();
+            }
             return CONFIG;
         }
     }
