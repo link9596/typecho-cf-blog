@@ -15,7 +15,7 @@ var InstantClick = function (d, e) {
         scroll: 'instant',            // 'instant' | 'smooth' | 'keep'
         respectReducedMotion: true,
         cacheMax: 30,
-        containers: ['#main','#secondary','#header']
+        containers: ['#main', '#secondary', '#header', '#footer'],
     };
 
     var prefersReducedMotion =
