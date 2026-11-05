@@ -4,6 +4,7 @@
  * 改造3：Swup 兼容类名 is-changing / is-animating / is-leaving / transition-fade
  * 改造4：切换后滚动策略（instant / smooth / keep）
  * 改造5：可配置 API + prefers-reduced-motion 支持
+ * 修复：done() 找不到进度条不再复活 / start() 清理所有残留 / body 替换时迁移进度条
  */
 var InstantClick = function (d, e) {
 
@@ -16,7 +17,12 @@ var InstantClick = function (d, e) {
         scroll: 'smooth',
         respectReducedMotion: true,
         cacheMax: 30,
-        containers: [{ selector: 'body', animation: 'auto' }]
+        containers: containers: [
+    '#main',
+    { selector: '#header',    animation: 'none' },  // 即使 CSS 写了动画也跳过
+    { selector: '#secondary', animation: 'auto' },  // 默认：CSS 驱动
+    '#footer'
+  ]
     };
 
     var prefersReducedMotion =
@@ -41,7 +47,6 @@ var InstantClick = function (d, e) {
         return /(^|\s)transition-/.test(el.className || '');
     }
 
-    // 读取元素的计算过渡/动画时长
     function measureDuration(el) {
         try {
             var cs = getComputedStyle(el);
@@ -78,11 +83,9 @@ var InstantClick = function (d, e) {
         });
     }
 
-    // 关键：保证 Promise 链不会因为抛异常而中止
     function safeThen(promise, cb) {
         return promise.then(function () {
             try { cb(); } catch (err) {
-                // 兜底：即使回调出错也要释放动画锁，避免"页面点不动"
                 d.documentElement.classList.remove('is-changing', 'is-animating', 'is-leaving');
                 animating = false;
                 if (typeof console !== 'undefined') console.error('[InstantClick] transition callback error:', err);
@@ -289,9 +292,18 @@ var InstantClick = function (d, e) {
                 if (r.addedClass && r.newEl) r.newEl.classList.add('transition-fade');
             });
 
+            // ★ 修复：body 替换时把进度条迁移到新 body，避免 done() 兜底复活
             replacements.forEach(function (r) {
-                if (r.isBody) d.documentElement.replaceChild(r.newEl, r.oldEl);
-                else r.oldEl.parentNode.replaceChild(r.newEl, r.oldEl);
+                if (r.isBody) {
+                    var bar = d.getElementById('instantclick');
+                    if (bar && bar.parentNode === r.oldEl) {
+                        bar.parentNode.removeChild(bar);
+                    }
+                    d.documentElement.replaceChild(r.newEl, r.oldEl);
+                    if (bar) r.newEl.appendChild(bar);
+                } else {
+                    r.oldEl.parentNode.replaceChild(r.newEl, r.oldEl);
+                }
             });
 
             html.classList.remove('is-leaving');
@@ -463,7 +475,7 @@ var InstantClick = function (d, e) {
                         : (C.start(0, true), t("wait"), m = true);
     }
 
-    // ================= 进度条 =================
+    // ================= 进度条（修复版）=================
     var I = navigator.userAgent,
         S = -1 < I.indexOf(" CriOS/"),
         Q = "createTouch" in d,
@@ -473,11 +485,20 @@ var InstantClick = function (d, e) {
         J, D, H,
         B = { fetch: [], receive: [], wait: [], change: [] },
         C = function () {
+            var f, h, k, n, l;
+
+            // 清理页面上所有 #instantclick（防止多次 start / body 替换后残留）
+            function clearAll() {
+                var olds = d.querySelectorAll('#instantclick');
+                for (var i = 0; i < olds.length; i++) {
+                    if (olds[i].parentNode) olds[i].parentNode.removeChild(olds[i]);
+                }
+            }
+
             function a(a, e) {
                 n = a;
-                d.getElementById(f.id) && d.body.removeChild(f);
+                clearAll();
                 f.style.opacity = "1";
-                d.getElementById(f.id) && d.body.removeChild(f);
                 g();
                 e && setTimeout(b, 0);
                 clearTimeout(l);
@@ -485,8 +506,18 @@ var InstantClick = function (d, e) {
             }
             function b() { n = 10; g() }
             function c() { n += 1 + 2 * Math.random(); 98 <= n ? n = 98 : l = setTimeout(c, 500); g() }
-            function g() { h.style[k] = "translate(" + n + "%)"; d.getElementById(f.id) || d.body.appendChild(f) }
-            function e() { d.getElementById(f.id) ? (clearTimeout(l), n = 100, g(), f.style.opacity = "0") : (a(100 == n ? 0 : n), setTimeout(e, 0)) }
+            function g() {
+                h.style[k] = "translate(" + n + "%)";
+                if (!d.getElementById(f.id)) d.body.appendChild(f);
+            }
+            // ★ 修复：找不到元素直接结束，不再复活
+            function e() {
+                if (!d.getElementById(f.id)) return;
+                clearTimeout(l);
+                n = 100;
+                g();
+                f.style.opacity = "0";
+            }
             function m() {
                 f.style.left = pageXOffset + "px";
                 f.style.width = innerWidth + "px";
@@ -494,21 +525,30 @@ var InstantClick = function (d, e) {
                 var a = "orientation" in window && 90 == Math.abs(orientation);
                 f.style[k] = "scaleY(" + innerWidth / screen[a ? "height" : "width"] * 2 + ")"
             }
-            var f, h, k, n, l;
             return {
                 init: function () {
-                    f = d.createElement("div"); f.id = "instantclick";
-                    h = d.createElement("div"); h.id = "instantclick-bar"; h.className = "instantclick-bar"; f.appendChild(h);
-                    var a = ["Webkit", "Moz", "O"]; k = "transform";
-                    if (!(k in h.style)) for (var b = 0; 3 > b; b++) a[b] + "Transform" in h.style && (k = a[b] + "Transform");
+                    // ★ 修复：init 时清理已有进度条
+                    clearAll();
+                    f = d.createElement("div");
+                    f.id = "instantclick";
+                    h = d.createElement("div");
+                    h.id = "instantclick-bar";
+                    h.className = "instantclick-bar";
+                    f.appendChild(h);
+                    var a = ["Webkit", "Moz", "O"];
+                    k = "transform";
+                    if (!(k in h.style))
+                        for (var b = 0; 3 > b; b++) a[b] + "Transform" in h.style && (k = a[b] + "Transform");
                     var c = "transition";
-                    if (!(c in h.style)) for (b = 0; 3 > b; b++) a[b] + "Transition" in h.style && (c = "-" + a[b].toLowerCase() + "-" + c);
+                    if (!(c in h.style))
+                        for (b = 0; 3 > b; b++) a[b] + "Transition" in h.style && (c = "-" + a[b].toLowerCase() + "-" + c);
                     var st = d.createElement("style");
                     st.innerHTML = "#instantclick{position:" + (Q ? "absolute" : "fixed") + ";top:0;left:0;width:100%;pointer-events:none;z-index:2147483647;" + c + ":opacity .25s .1s}.instantclick-bar{background:#29d;width:100%;margin-left:-100%;height:2px;" + c + ":all .25s}";
                     d.head.appendChild(st);
                     Q && (m(), addEventListener("resize", m), addEventListener("scroll", m))
                 },
-                start: a, done: e
+                start: a,
+                done: e
             }
         }(),
         R = "pushState" in history && (!I.match("Android") || I.match("Chrome/")) && "file:" != e.protocol;
@@ -552,9 +592,17 @@ var InstantClick = function (d, e) {
             if (k) return;
             if (!R) { t("change", true); return; }
 
+            // ★ 修复：init 时清理残留（热重载 / 重复 init 场景）
+            var olds = d.querySelectorAll('#instantclick');
+            for (var i = 0; i < olds.length; i++) {
+                if (olds[i].parentNode) olds[i].parentNode.removeChild(olds[i]);
+            }
+            var oldStyle = d.getElementById('ic-anim-style');
+            if (oldStyle && oldStyle.parentNode) oldStyle.parentNode.removeChild(oldStyle);
+
             injectAnimCSS();
 
-            // 清理残留状态类（应对热重载）
+            // 清理残留状态类
             d.documentElement.classList.remove('is-changing', 'is-animating', 'is-leaving');
 
             k = w(e.href);
