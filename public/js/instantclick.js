@@ -13,7 +13,7 @@ var InstantClick = function (d, e) {
         containers: [
             { selector: '#main',      animation: 'auto' },
             { selector: '#header',    animation: 'none' },
-            { selector: '#secondary', animation: 'auto' },
+            { selector: '#secondary', animation: 'none' },
             { selector: '#footer',    animation: 'none' }
         ]
     };
