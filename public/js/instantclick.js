@@ -4,26 +4,33 @@
  * 改造3：Swup 兼容类名 is-changing / is-animating / is-leaving / transition-fade
  * 改造4：切换后滚动策略（instant / smooth / keep）
  * 改造5：可配置 API + prefers-reduced-motion 支持
- * 修复：done() 找不到进度条不再复活 / start() 清理所有残留 / body 替换时迁移进度条
+ *
+ * 修复记录：
+ *  A. safeThen 兜底：动画回调抛异常不再卡死 animating 锁
+ *  B. 进度条：done() 找不到元素不复活；start()/init() 清理所有残留；body 替换时迁移进度条
+ *  C. 点击漂移：P() 里检测 stale u（目标不一致时丢弃），F 分支用 a 而非 r
+ *  D. 兼容事件：fireEvents 同时触发 page:view / swup:page:view / astro:page-load / astro:after-swap
  */
 var InstantClick = function (d, e) {
 
     // ================= 配置 =================
+    // 注意：直接改 CONFIG 时，containers 必须是对象格式（不走 normalizeContainers）
+    // 想用字符串格式，请在 InstantClick.init({ containers: [...] }) 里传
     var CONFIG = {
-    animation: true,
-    theme: 'fade',
-    duration: 250,
-    easing: 'ease',
-    scroll: 'smooth',
-    respectReducedMotion: true,
-    cacheMax: 30,
-    containers: [                        // ← 加上键名
+        animation: true,
+        theme: 'fade',
+        duration: 250,
+        easing: 'ease',
+        scroll: 'smooth',
+        respectReducedMotion: true,
+        cacheMax: 30,
+        containers: [
         { selector: '#main',      animation: 'auto' },
         { selector: '#header',    animation: 'none' },
         { selector: '#secondary', animation: 'auto' },
         { selector: '#footer',    animation: 'auto' }
     ]
-};
+    };
 
     var prefersReducedMotion =
         typeof matchMedia !== 'undefined' &&
@@ -83,6 +90,7 @@ var InstantClick = function (d, e) {
         });
     }
 
+    // 兜底：即使回调内部抛异常，也释放状态锁
     function safeThen(promise, cb) {
         return promise.then(function () {
             try { cb(); } catch (err) {
@@ -254,9 +262,17 @@ var InstantClick = function (d, e) {
         var fireEvents = function () {
             C.done();
             t("change", false);
+
+            // InstantClick 原生事件
             var ev = d.createEvent("HTMLEvents");
             ev.initEvent("instantclick:newpage", !0, !0);
             dispatchEvent(ev);
+
+            // 兼容 Swup / Astro 监听
+            try { document.dispatchEvent(new Event('page:view')); } catch (_) {}
+            try { document.dispatchEvent(new Event('swup:page:view')); } catch (_) {}
+            try { document.dispatchEvent(new Event('astro:page-load')); } catch (_) {}
+            try { document.dispatchEvent(new Event('astro:after-swap')); } catch (_) {}
         };
 
         // ---- 3. 无替换 → 只更新 meta ----
@@ -288,11 +304,14 @@ var InstantClick = function (d, e) {
 
         // ---- 6. 执行替换 ----
         var doReplace = function () {
+            // 兼容 Astro：替换前触发
+            try { document.dispatchEvent(new Event('astro:before-swap')); } catch (_) {}
+
             replacements.forEach(function (r) {
                 if (r.addedClass && r.newEl) r.newEl.classList.add('transition-fade');
             });
 
-            // ★ 修复：body 替换时把进度条迁移到新 body，避免 done() 兜底复活
+            // body 替换时迁移进度条，避免 done() 兜底复活
             replacements.forEach(function (r) {
                 if (r.isBody) {
                     var bar = d.getElementById('instantclick');
@@ -440,23 +459,32 @@ var InstantClick = function (d, e) {
         (v = !0, m = !1, r = a, F = u = !1, q = { start: +new Date }, t("fetch"), p.open("GET", a), p.send())
     }
 
-    // ================= 导航入口 =================
+    // ================= 导航入口（修复点击漂移）=================
     function P(a) {
         if (animating) return;
         "display" in q || (q.display = +new Date - q.start);
 
         var _w = w(a);
+
+        // ① 缓存命中优先（缓存里的 body / title / url 都和 a 对应）
         if (_w in h && h[_w].body) {
             if (h[_w].invalid) { e.href = _w; return; }
             if (v && p) { try { p.abort(); } catch (_) {} }
             if (k in h) h[k].scrollY = pageYOffset;
             if (l) { clearTimeout(l); l = false; }
-            m = v = false; u = false;
+            m = v = false;
+            u = false;
             h[_w].lastUsed = +new Date();
             C.start(0, true);
             t("wait");
             performReplace(h[_w].body.cloneNode(true), h[_w].title, a, 0, false);
             return;
+        }
+
+        // ② 关键修复：stale u（上次预取留下的 body，但目标 URL 和点击的不一致）
+        //    直接丢弃，防止后面 u 分支用错 body 导致"点击 A 跑到 B"
+        if (u && w(r) !== _w) {
+            u = false;
         }
 
         l || !v
@@ -466,7 +494,7 @@ var InstantClick = function (d, e) {
             : m
                 ? e.href = a
                 : F
-                    ? e.href = r
+                    ? e.href = a   // ③ 修复：用 a，而非 r
                     : u
                         ? (h[k].scrollY = pageYOffset,
                            m = v = false,
@@ -487,7 +515,6 @@ var InstantClick = function (d, e) {
         C = function () {
             var f, h, k, n, l;
 
-            // 清理页面上所有 #instantclick（防止多次 start / body 替换后残留）
             function clearAll() {
                 var olds = d.querySelectorAll('#instantclick');
                 for (var i = 0; i < olds.length; i++) {
@@ -510,7 +537,7 @@ var InstantClick = function (d, e) {
                 h.style[k] = "translate(" + n + "%)";
                 if (!d.getElementById(f.id)) d.body.appendChild(f);
             }
-            // ★ 修复：找不到元素直接结束，不再复活
+            // 找不到元素直接结束，不复活
             function e() {
                 if (!d.getElementById(f.id)) return;
                 clearTimeout(l);
@@ -527,7 +554,6 @@ var InstantClick = function (d, e) {
             }
             return {
                 init: function () {
-                    // ★ 修复：init 时清理已有进度条
                     clearAll();
                     f = d.createElement("div");
                     f.id = "instantclick";
@@ -592,7 +618,7 @@ var InstantClick = function (d, e) {
             if (k) return;
             if (!R) { t("change", true); return; }
 
-            // ★ 修复：init 时清理残留（热重载 / 重复 init 场景）
+            // 清理残留（热重载 / 重复 init）
             var olds = d.querySelectorAll('#instantclick');
             for (var i = 0; i < olds.length; i++) {
                 if (olds[i].parentNode) olds[i].parentNode.removeChild(olds[i]);
@@ -602,7 +628,6 @@ var InstantClick = function (d, e) {
 
             injectAnimCSS();
 
-            // 清理残留状态类
             d.documentElement.classList.remove('is-changing', 'is-animating', 'is-leaving');
 
             k = w(e.href);
