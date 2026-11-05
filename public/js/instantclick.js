@@ -10,20 +10,20 @@ var InstantClick = function (d, e) {
 
     // ================= 配置 =================
     var CONFIG = {
-        animation: true,
-        theme: 'fade',
-        duration: 250,
-        easing: 'ease',
-        scroll: 'smooth',
-        respectReducedMotion: true,
-        cacheMax: 30,
-        containers: [
-    '#main',
-    { selector: '#header',    animation: 'none' },
-    { selector: '#secondary', animation: 'auto' },
-    '#footer'
-  ]
-    };
+    animation: true,
+    theme: 'fade',
+    duration: 250,
+    easing: 'ease',
+    scroll: 'smooth',
+    respectReducedMotion: true,
+    cacheMax: 30,
+    containers: [                        // ← 加上键名
+        { selector: '#main',      animation: 'auto' },
+        { selector: '#header',    animation: 'none' },
+        { selector: '#secondary', animation: 'auto' },
+        { selector: '#footer',    animation: 'auto' }
+    ]
+};
 
     var prefersReducedMotion =
         typeof matchMedia !== 'undefined' &&
