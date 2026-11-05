@@ -695,6 +695,13 @@ html.snowi-dark .snowi-page .author-name {
   touch-action: pan-y pinch-zoom;
 }
 
+.snowi-page .post-content .live-photo {
+  margin: 12px 0;
+}
+.snowi-page .post-excerpt .live-photo {
+  margin: 8px 0;
+}
+
 /* 没有内联比例时给默认 3:4，避免容器高度为 0 */
 .live-photo:where(:not([style*="padding-top"]):not([style*="aspect-ratio"])) {
   aspect-ratio: 3 / 4;
