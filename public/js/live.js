@@ -1,5 +1,5 @@
 /*!
- * LivePhoto + Lightbox (v14-fixed4 + iOS prime + lightbox-layer)
+ * LivePhoto + Lightbox (v14-fixed4 + iOS prime)
  * - 修复移动端 touchstart + 模拟 mouseenter 重复触发导致首次长按后视频卡一下从头播放
  * - 进度圈 = 视频网络加载进度（buffered / fake schedule），不是播放进度
  * - suspend() 不动 fake progress / progressMode / 进度圈，badge 进度自然继承
@@ -7,24 +7,12 @@
  * - play 失败重试，避免一次失败后无法播放
  * - 灯箱长按支持 touchmove 取消
  * - 圆角回归旧版：12px -> 10px
- * - ★ iOS 预热：touchstart 同步 play() 拿播放授权，touchend 撤销，首次长按即可播放
- * - ★ 内置基础样式：与灯箱一致的图层关系（img 上层控制显隐，video 下层始终不透明），
- *   彻底消除播放结束闪白
+ * - ★ iOS 预热：touchstart 同步 play() 拿授权，touchend/touchmove 撤销，首次长按即可播放
  */
 (function (global) {
     'use strict';
 
     const STYLE_ID = 'livephoto-lightbox-style';
-
-    /* ★ 内置样式：与灯箱完全一致的显隐/图层逻辑 */
-    const BASE_STYLE_ID = 'livephoto-base-style';
-    const BASE_STYLE_CSS =
-        '.live-photo{position:relative}' +
-        '.live-photo .live-photo-img,.live-photo .live-photo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover}' +
-        '.live-photo .live-photo-img{z-index:2;opacity:1;transition:opacity .3s linear}' +
-        '.live-photo .live-photo-video{z-index:1;background-color:#000}' +
-        '.live-photo.is-playing .live-photo-img{opacity:0}';
-
     const STYLE_CSS = `
 .lightbox-overlay.lightbox-overlay{position:fixed!important;inset:0!important;margin:0!important;padding:0!important;z-index:10000!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;user-select:none!important;-webkit-user-select:none!important;overflow:hidden!important;box-sizing:border-box!important;background:transparent!important;border:0!important;outline:0!important}
 .lightbox-overlay.lightbox-overlay *,.lightbox-overlay.lightbox-overlay *::before,.lightbox-overlay.lightbox-overlay *::after{box-sizing:border-box!important}
@@ -63,6 +51,9 @@
     const CLONE_RADIUS_START = '12px';
     const CLONE_RADIUS_END = '10px';
 
+    /* ★ iOS 预热：多实例互斥，避免手指滑过列表时多个视频同时后台播放 */
+    let activePrimeInstance = null;
+
     function injectStyles() {
         if (document.getElementById(STYLE_ID)) return;
         const head = document.head || document.documentElement;
@@ -73,23 +64,10 @@
         style.textContent = STYLE_CSS;
         head.appendChild(style);
     }
-    function injectBaseStyles() {
-        if (document.getElementById(BASE_STYLE_ID)) return;
-        const head = document.head || document.documentElement;
-        if (!head) return;
-        const style = document.createElement('style');
-        style.id = BASE_STYLE_ID;
-        style.type = 'text/css';
-        style.textContent = BASE_STYLE_CSS;
-        head.appendChild(style);
-    }
-    if (document.head) { injectStyles(); injectBaseStyles(); }
+    if (document.head) injectStyles();
     else if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () {
-            injectStyles();
-            injectBaseStyles();
-        }, { once: true });
-    } else { injectStyles(); injectBaseStyles(); }
+        document.addEventListener('DOMContentLoaded', injectStyles, { once: true });
+    } else injectStyles();
 
     function addPaddingTopFallback() {
         var cs = document.querySelectorAll('.live-photo');
@@ -110,8 +88,6 @@
             c._paddingFallbackAdded = true;
         }
     }
-
-    let activePrimeInstance = null;
 
     class LivePhotoInstance {
         constructor(container, options = {}) {
@@ -145,7 +121,7 @@
             this.loadFailed = false;
             this.loadTimeout = null;
             this._pendingCanPlay = false;
-            this._primePending = false;
+            this._primePending = false;              /* ★ iOS 预热标记 */
             this._videoHandlers = {};
             this._containerHandlers = {};
 
@@ -159,6 +135,7 @@
                 ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
         }
 
+        /* ★ iOS 预热：判定 iOS 设备（含 iPadOS 桌面模式） */
         _isIOSSafari() {
             const ua = navigator.userAgent;
             return /iPad|iPhone|iPod/.test(ua) ||
@@ -340,18 +317,14 @@
             if (this.videoEl.readyState === 0) { this.videoEl.load(); this._startLoadTimeout(); }
         }
 
+        /* ★ iOS 预热：touchstart 同步栈内 play() 拿授权 */
         _primeVideo() {
             if (!this._isIOSSafari()) return;
             if (this.loadFailed || this.isPlaying || this.isEndingGracefully) return;
             if (this._primePending) return;
-            if (this.videoEl.closest && this.videoEl.closest('.lightbox-clone')) return;
-
-            if (activePrimeInstance && activePrimeInstance !== this) {
-                activePrimeInstance._abortPrime();
-            }
+            if (activePrimeInstance && activePrimeInstance !== this) activePrimeInstance._abortPrime();
             activePrimeInstance = this;
             this._primePending = true;
-
             const p = this.videoEl.play();
             if (p !== undefined) {
                 p.catch(() => {
@@ -361,12 +334,12 @@
             }
         }
 
+        /* ★ iOS 预热：撤销预热（长按未成立时调用） */
         _abortPrime() {
             if (!this._primePending) return;
             this._primePending = false;
             if (activePrimeInstance === this) activePrimeInstance = null;
             if (this.isPlaying) return;
-
             if (!this.videoEl.paused) this.videoEl.pause();
             try {
                 if (this.videoEl.currentTime > 0) this.videoEl.currentTime = 0;
@@ -429,6 +402,7 @@
 
             const v = this.videoEl;
 
+            /* ★ iOS 预热接管：视频已被 touchstart 同步 play() 启动 → 回 0 + 直接切 UI，不重复 play */
             if (wasPrimed || !v.paused) {
                 if (v.currentTime !== 0) { try { v.currentTime = 0; } catch (_) {} }
                 if (v.paused) {
@@ -439,6 +413,7 @@
                 return;
             }
 
+            /* 原有路径：桌面 hover / prime 被系统拒绝时兜底 */
             if (v.currentTime !== 0) v.currentTime = 0;
             const p = v.play();
             if (p !== undefined) p.catch((e) => { console.warn('LivePhoto: play failed', e); this.stop(); });
@@ -465,8 +440,9 @@
             if (!wasEnding) this._scheduleVideoReset();
         }
 
+        /* 只清理 pending 状态，不动 fake progress / progressMode / 进度圈，badge 进度自然继承 */
         suspend() {
-            this._abortPrime();
+            this._abortPrime();                      /* ★ iOS 预热：清理预热状态 */
             this._clearLongPressTimer();
             this._cancelScheduledReset();
             this._cleanupPlayingWaiter();
@@ -509,26 +485,26 @@
             if (this.videoEl.currentTime !== 0 && !this.isPlaying && !this.isEndingGracefully) {
                 this.videoEl.currentTime = 0;
             }
-            this._primeVideo();
+            this._primeVideo();                      /* ★ iOS 预热：同步栈内 play() */
             this._startLongPressTimer();
         }
         _onTouchMove(e) {
             if (this.longPressTimer && this._isTouchMoved(e)) {
                 this._clearLongPressTimer();
-                this._abortPrime();
+                this._abortPrime();                  /* ★ iOS 预热：滑动取消 */
             }
         }
         _onTouchEnd() {
             if (this.loadFailed) return;
             this._clearLongPressTimer();
             if (this.isPlaying) this.stop();
-            else this._abortPrime();
+            else this._abortPrime();                 /* ★ iOS 预热：长按未成立，撤销预热 */
         }
         _onTouchCancel() {
             if (this.loadFailed) return;
             this._clearLongPressTimer();
             if (this.isPlaying) this.stop();
-            else this._abortPrime();
+            else this._abortPrime();                 /* ★ iOS 预热：撤销预热 */
         }
         _isTouchMoved(e) {
             const dx = Math.abs(e.touches[0].clientX - this.touchStartX);
@@ -560,7 +536,7 @@
         }
 
         destroy() {
-            this._abortPrime();
+            this._abortPrime();                      /* ★ iOS 预热：清理预热状态 */
             this._clearLongPressTimer();
             this._stopAllFakeProgress();
             if (this.loadTimeout) { clearTimeout(this.loadTimeout); this.loadTimeout = null; }
@@ -909,6 +885,8 @@
         lbState = null;
     }
 
+    /* 灯箱内只控制播放/暂停与错误重试；进度圈由原实例的 progress/fake schedule 驱动
+       iOS 上打开灯箱前 touchstart 已同步 play() 过，视频元素已解锁，此处的异步 play() 可正常成功 */
     function bindCloneVideo(clone, video) {
         if (!lbState) return;
         const END_THRESHOLD = 0.6;
