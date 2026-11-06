@@ -394,6 +394,18 @@ const { siteTitle = '' } = Astro.props;
         var stroke = cs.stroke;
         var sw = parseFloat(cs.strokeWidth) || 1;
 
+        var dashStr = cs.strokeDasharray;
+        if (dashStr && dashStr !== 'none') {
+          var dashArr = dashStr.split(/[\s,]+/)
+            .map(function (v) { return parseFloat(v); })
+            .filter(function (n) { return !isNaN(n); });
+          ctx.setLineDash(dashArr.length ? dashArr : []);
+        } else {
+          ctx.setLineDash([]);
+        }
+        var dashOff = parseFloat(cs.strokeDashoffset);
+        ctx.lineDashOffset = isNaN(dashOff) ? 0 : dashOff;
+
         ctx.lineCap = cs.strokeLinecap || 'round';
         ctx.lineJoin = cs.strokeLinejoin || 'round';
 
