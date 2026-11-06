@@ -1,5 +1,5 @@
 /*!
- * LivePhoto + Lightbox (v14-fixed4 + iOS prime + smooth-switch)
+ * LivePhoto + Lightbox (v14-fixed4 + iOS prime + lightbox-layer)
  * - 修复移动端 touchstart + 模拟 mouseenter 重复触发导致首次长按后视频卡一下从头播放
  * - 进度圈 = 视频网络加载进度（buffered / fake schedule），不是播放进度
  * - suspend() 不动 fake progress / progressMode / 进度圈，badge 进度自然继承
@@ -8,17 +8,22 @@
  * - 灯箱长按支持 touchmove 取消
  * - 圆角回归旧版：12px -> 10px
  * - ★ iOS 预热：touchstart 同步 play() 拿播放授权，touchend 撤销，首次长按即可播放
- * - ★ 内置基础样式：视频只在 is-playing 时可见，且与 img 同步淡入淡出，避免结束闪白
+ * - ★ 内置基础样式：与灯箱一致的图层关系（img 上层控制显隐，video 下层始终不透明），
+ *   彻底消除播放结束闪白
  */
 (function (global) {
     'use strict';
 
     const STYLE_ID = 'livephoto-lightbox-style';
-    /* ★ 内置样式：video 的 opacity 加与 img 一致的过渡，消除结束闪白 */
+
+    /* ★ 内置样式：与灯箱完全一致的显隐/图层逻辑 */
     const BASE_STYLE_ID = 'livephoto-base-style';
     const BASE_STYLE_CSS =
-        '.live-photo .live-photo-video{opacity:0;transition:opacity .3s linear}' +
-        '.live-photo.is-playing .live-photo-video{opacity:1}';
+        '.live-photo{position:relative}' +
+        '.live-photo .live-photo-img,.live-photo .live-photo-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover}' +
+        '.live-photo .live-photo-img{z-index:2;opacity:1;transition:opacity .3s linear}' +
+        '.live-photo .live-photo-video{z-index:1;background-color:#000}' +
+        '.live-photo.is-playing .live-photo-img{opacity:0}';
 
     const STYLE_CSS = `
 .lightbox-overlay.lightbox-overlay{position:fixed!important;inset:0!important;margin:0!important;padding:0!important;z-index:10000!important;-webkit-tap-highlight-color:transparent!important;touch-action:none!important;user-select:none!important;-webkit-user-select:none!important;overflow:hidden!important;box-sizing:border-box!important;background:transparent!important;border:0!important;outline:0!important}
@@ -68,7 +73,6 @@
         style.textContent = STYLE_CSS;
         head.appendChild(style);
     }
-    /* ★ 内置样式注入 */
     function injectBaseStyles() {
         if (document.getElementById(BASE_STYLE_ID)) return;
         const head = document.head || document.documentElement;
