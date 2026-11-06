@@ -1,0 +1,621 @@
+// unspport aspect-ratio browser
+(function() {
+  function addPaddingTopFallback() {
+    var containers = document.querySelectorAll('.live-photo');
+    for (var i = 0; i < containers.length; i++) {
+      var container = containers[i];
+      if (container._paddingFallbackAdded) continue;
+      var style = container.getAttribute('style') || '';
+      var match = style.match(/aspect-ratio:\s*([\d\.]+\s*\/\s*[\d\.]+)/i);
+      if (match) {
+        var ratio = match[1];
+        var parts = ratio.split('/');
+        var w = parseFloat(parts[0]);
+        var h = parseFloat(parts[1]);
+        if (!isNaN(w) && !isNaN(h) && w > 0) {
+          var paddingTop = (h / w) * 100 + '%';
+          if (style.indexOf('padding-top') === -1) {
+            var newStyle = style.trim();
+            if (newStyle && !newStyle.endsWith(';')) newStyle += ';';
+            newStyle += ' padding-top: ' + paddingTop + ';';
+            container.setAttribute('style', newStyle);
+          }
+        }
+      }
+      container._paddingFallbackAdded = true;
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', addPaddingTopFallback);
+  } else {
+    addPaddingTopFallback();
+  }
+})();
+
+/**
+ * WebLivePhoto Kit
+ *
+ * 1. HTML ：
+ * <div class="live-photo" id="myLivePhoto">
+ *   <img class="live-photo-img" src="cover.jpg" alt="...">
+ *   <video class="live-photo-video" playsinline muted preload="auto">
+ *     <source src="video.mp4" type="video/mp4">
+ *   </video>
+ * </div>
+ * 2. use javascript LivePhoto.init() or LivePhoto.init('.live-photo') to initialize.
+ */
+(function (root, factory) {
+  if (typeof define === 'function' && define.amd) {
+    define([], factory);
+  } else if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.LivePhoto = factory();
+  }
+}(typeof self !== 'undefined' ? self : this, function () {
+
+  // ★ iOS 预热：模块级多实例互斥，避免手指滑过列表时多个视频同时后台播放
+  let activePrimeInstance = null;
+
+  class LivePhotoInstance {
+    constructor(container, options = {}) {
+      this.container = container;
+      this.imgEl = container.querySelector('.live-photo-img');
+      this.videoEl = container.querySelector('.live-photo-video');
+      if (!this.imgEl || !this.videoEl) {
+        throw new Error('LivePhoto Error: .live-photo-img or .live-photo-video not found');
+      }
+      this.options = Object.assign({
+        longPressDelay: 150,
+        endThreshold: 0.6,
+        autoEndOnFinish: true,
+        moveCancelThreshold: 10,
+        fakeSchedule: [
+          { delay: 200, target: 0.1 },
+          { delay: 500, target: 0.2 },
+          { delay: 600, target: 0.25 },
+          { delay: 800, target: 0.3 },
+          { delay: 1000, target: 0.4 },
+          { delay: 2100, target: 0.55 },
+          { delay: 3500, target: 0.65 },
+          { delay: 8800, target: 0.8 }
+        ],
+        progressStrokeWidth: 4,
+        timeoutMs: 20000
+      }, options);
+
+      // 过渡结束后重置视频的相关句柄
+      this._resetOnTransitionEnd = null;
+      this._resetFallbackTimer = null;
+      this._onResetDone = null;
+
+      // 播放启动等待的句柄
+      this._playingHandler = null;
+      this._playingTimeout = null;
+
+      this._initBadge();
+      this._initVideo();
+      this._bindEvents();
+    }
+
+    _detectMobile() {
+      return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    }
+
+    // ★ iOS 预热：判定是否为 iOS 设备（含 iPadOS 桌面模式）
+    _isIOSSafari() {
+      const ua = navigator.userAgent;
+      const isIOS = /iPad|iPhone|iPod/.test(ua)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      return isIOS;
+    }
+
+    _initBadge() {
+      const isMobile = this._detectMobile();
+      this.isMobile = isMobile;
+      const badge = document.createElement('div');
+      badge.className = 'live-photo-badge';
+      badge.innerHTML = `
+        <div class="live-photo-icon">
+          <svg class="live-photo-icon-svg normal-icon" viewBox="0 0 64 64" fill="none">
+            <circle id="middleCircle" cx="32" cy="32" r="16" stroke="rgba(0,0,0,0.6)" fill="none"/>
+            <polygon points="39,32 28,24 28,40" fill="#000000" />
+            <g transform="rotate(-90 32 32)">
+              <circle id="progressCircle" class="live-photo-progress-ring" cx="32" cy="32" r="26" stroke="rgba(0,0,0,0.7)" fill="none" stroke-linecap="round"/>
+            </g>
+          </svg>
+          <svg class="live-photo-icon-svg live-photo-disabled-icon" viewBox="0 0 64 64" fill="none">
+            <circle cx="32" cy="32" r="26" stroke="rgba(0,0,0,0.8)" stroke-width="4" fill="none"/>
+            <line x1="15" y1="15" x2="49" y2="49" stroke="rgba(0,0,0,0.8)" stroke-width="4" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="live-photo-text">实况</span>
+      `;
+      this.container.appendChild(badge);
+      this.progressCircle = badge.querySelector('#progressCircle');
+      this.middleCircle = badge.querySelector('#middleCircle');
+      this.normalIcon = badge.querySelector('.normal-icon');
+      this.disabledIcon = badge.querySelector('.live-photo-disabled-icon');
+      if (this.isMobile) {
+        this.middleCircle.setAttribute('stroke-width', '3');
+        this.normalStrokeWidth = 4;
+        this.dotCount = 26;
+      } else {
+        this.middleCircle.setAttribute('stroke-width', '5');
+        this.normalStrokeWidth = 8;
+        this.dotCount = 16;
+      }
+      this.circumference = 2 * Math.PI * 26;
+      this.dotSpacing = this.circumference / this.dotCount;
+      this._setDotPattern();
+    }
+
+    _initVideo() {
+      this.videoEl.setAttribute('playsinline', '');
+      this.videoEl.setAttribute('webkit-playsinline', '');
+      this.videoEl.setAttribute('x5-playsinline', '');
+      this.videoEl.muted = true;
+      this.videoEl.playsInline = true;
+      this.videoEl.preload = 'auto';
+      this.videoEl.loop = false;
+
+      this.isPlaying = false;
+      this.longPressTimer = null;
+      this.isEndingGracefully = false;
+      this.touchStartX = 0;
+      this.touchStartY = 0;
+      this.progressMode = false;
+      this.fakeSteps = null;
+      this.loadFailed = false;
+      this.loadTimeout = null;
+
+      // ★ iOS 预热：标记当前是否处于"预热"状态
+      this._primePending = false;
+
+      this.videoEl.addEventListener('error', (e) => {
+        console.warn('LivePhoto: video error', e);
+        this._markAsFailed();
+      });
+
+      const onSuccess = () => {
+        if (this.loadTimeout) {
+          clearTimeout(this.loadTimeout);
+          this.loadTimeout = null;
+        }
+        if (this.progressMode && !this.loadFailed) {
+          this._stopAllFakeProgress();
+          this.progressMode = false;
+          this._setDotPattern();
+        }
+      };
+      this.videoEl.addEventListener('canplay', onSuccess);
+      this.videoEl.addEventListener('loadeddata', onSuccess);
+      this.videoEl.addEventListener('loadedmetadata', onSuccess);
+      this.videoEl.addEventListener('progress', () => this._onRealProgress());
+
+      this.videoEl.addEventListener('timeupdate', () => {
+        if (!this.isPlaying || this.isEndingGracefully || this.loadFailed) return;
+        const duration = this.videoEl.duration;
+        if (isNaN(duration)) return;
+        if (duration - this.videoEl.currentTime <= this.options.endThreshold) {
+          this._endGracefully();
+        }
+      });
+
+      this.videoEl.addEventListener('ended', () => {
+        if (this.isPlaying && !this.isEndingGracefully && !this.loadFailed) this._endGracefully();
+      });
+    }
+
+    _markAsFailed() {
+      if (this.loadFailed) return;
+      this.loadFailed = true;
+      if (this.normalIcon) this.normalIcon.style.display = 'none';
+      if (this.disabledIcon) this.disabledIcon.style.display = 'block';
+      this._stopAllFakeProgress();
+      if (this.loadTimeout) {
+        clearTimeout(this.loadTimeout);
+        this.loadTimeout = null;
+      }
+      this.progressMode = false;
+      if (this.isPlaying) this.stop();
+      this.container.classList.remove('live-photo--loading');
+      this.container.classList.remove('is-playing');
+    }
+
+    _startLoadTimeout() {
+      if (this.options.timeoutMs <= 0) return;
+      if (this.loadTimeout) clearTimeout(this.loadTimeout);
+      this.loadTimeout = setTimeout(() => {
+        if (!this.loadFailed && this.videoEl.readyState < 2) {
+          console.warn('LivePhoto: video loading timeout, cannot play');
+          this._markAsFailed();
+        }
+      }, this.options.timeoutMs);
+    }
+
+    _getRealBufferedPercent() {
+      if (!this.videoEl.duration || isNaN(this.videoEl.duration)) return 0;
+      const buffered = this.videoEl.buffered;
+      if (buffered.length === 0) return 0;
+      const end = buffered.end(buffered.length - 1);
+      return Math.min(1, Math.max(0, end / this.videoEl.duration));
+    }
+
+    _setProgress(percent) {
+      if (!this.progressCircle || this.loadFailed) return;
+      const offset = this.circumference * (1 - percent);
+      this.progressCircle.style.strokeDashoffset = offset;
+    }
+
+    _setDotPattern() {
+      if (!this.progressCircle || this.loadFailed) return;
+      this.progressCircle.setAttribute('stroke-dasharray', `0 ${this.dotSpacing}`);
+      this.progressCircle.style.strokeDashoffset = '';
+      this.progressCircle.setAttribute('stroke', 'rgba(0,0,0,0.7)');
+      this.progressCircle.setAttribute('stroke-width', this.normalStrokeWidth);
+    }
+
+    _enableProgressMode() {
+      if (!this.progressCircle || this.loadFailed) return;
+      this.progressCircle.setAttribute('stroke-dasharray', `${this.circumference}`);
+      this.progressCircle.setAttribute('stroke', '#000000');
+      this.progressCircle.setAttribute('stroke-width', this.options.progressStrokeWidth);
+    }
+
+    _onRealProgress() {
+      if (!this.progressMode || this.loadFailed) return;
+      const realPercent = this._getRealBufferedPercent();
+      if (this.fakeSteps && this.fakeSteps.length > 0) {
+        let currentOffset = parseFloat(this.progressCircle.style.strokeDashoffset);
+        if (isNaN(currentOffset)) currentOffset = this.circumference;
+        let currentPercent = (this.circumference - currentOffset) / this.circumference;
+        if (realPercent > currentPercent) {
+          this._stopAllFakeProgress();
+          this._setProgress(realPercent);
+        }
+      } else {
+        this._setProgress(realPercent);
+      }
+    }
+
+    _startFakeProgress() {
+      if (this.fakeSteps && this.fakeSteps.length > 0) return;
+      if (this.loadFailed) return;
+      this._enableProgressMode();
+      this._setProgress(0);
+      const schedule = this.options.fakeSchedule;
+      this.fakeSteps = [];
+      for (let i = 0; i < schedule.length; i++) {
+        const step = schedule[i];
+        const timer = setTimeout(() => {
+          if (this.loadFailed) return;
+          const realPercent = this._getRealBufferedPercent();
+          if (realPercent >= step.target) {
+            this._stopAllFakeProgress();
+            this._setProgress(realPercent);
+            return;
+          }
+          this._setProgress(step.target);
+          if (step.target === 0.8) {
+            this.fakeSteps = null;
+          }
+        }, step.delay);
+        this.fakeSteps.push(timer);
+      }
+    }
+
+    _stopAllFakeProgress() {
+      if (this.fakeSteps) {
+        for (let timer of this.fakeSteps) clearTimeout(timer);
+        this.fakeSteps = null;
+      }
+    }
+
+    _preloadVideo() {
+      if (this.loadFailed) return;
+      if (this.videoEl.readyState >= 2) return;
+      if (!this.progressMode) {
+        this.progressMode = true;
+        this._startFakeProgress();
+      }
+      if (this.videoEl.readyState === 0) {
+        this.videoEl.load();
+        this._startLoadTimeout();
+      }
+    }
+
+    // ─── ★ iOS 预热：在 touchstart 同步栈内 play()，拿播放授权 ───
+    _primeVideo() {
+      if (!this._isIOSSafari()) return;                     // 非 iOS 完全跳过
+      if (this.loadFailed || this.isPlaying || this.isEndingGracefully) return;
+      if (this._primePending) return;
+
+      if (activePrimeInstance && activePrimeInstance !== this) {
+        activePrimeInstance._abortPrime();                  // 前一个实例的预热让位
+      }
+      activePrimeInstance = this;
+      this._primePending = true;
+      this.videoEl.muted = true;
+
+      // ★ 关键：必须在用户手势的同步调用栈里调用 play()
+      const p = this.videoEl.play();
+      if (p !== undefined) {
+        p.catch(() => {                                     // 低电量等场景被拒，静默降级
+          this._primePending = false;
+          if (activePrimeInstance === this) activePrimeInstance = null;
+        });
+      }
+    }
+
+    // ─── ★ iOS 预热：撤销预热（长按未成立时调用） ───
+    _abortPrime() {
+      if (!this._primePending) return;
+      this._primePending = false;
+      if (activePrimeInstance === this) activePrimeInstance = null;
+      if (this.isPlaying) return;                           // 长按已成立，交给 stop()
+
+      if (!this.videoEl.paused) this.videoEl.pause();
+      try {
+        if (this.videoEl.currentTime > 0) this.videoEl.currentTime = 0;
+      } catch (e) {}
+      // 注意：不碰进度条、不碰 loadTimeout，保持原有"轻点后进度条继续"的行为
+    }
+
+    // ─── 过渡结束后重置视频 ───
+    _scheduleVideoReset() {
+      this._cancelScheduledReset();
+      if (!this.imgEl) return;
+      const style = getComputedStyle(this.imgEl);
+      const hasTransition = style.transitionDuration !== '0s' && parseFloat(style.transitionDuration) > 0;
+
+      const doReset = () => {
+        if (!this.isPlaying) {
+          this.videoEl.currentTime = 0;
+        }
+        this._cancelScheduledReset();
+        if (this._onResetDone) {
+          this._onResetDone();
+          this._onResetDone = null;
+        }
+      };
+
+      if (!hasTransition) {
+        doReset();
+        return;
+      }
+
+      const onTransitionEnd = (e) => {
+        if (e.target !== this.imgEl) return;
+        doReset();
+      };
+      this.imgEl.addEventListener('transitionend', onTransitionEnd, { once: true });
+      this._resetOnTransitionEnd = () => {
+        this.imgEl.removeEventListener('transitionend', onTransitionEnd);
+        this._resetOnTransitionEnd = null;
+      };
+      this._resetFallbackTimer = setTimeout(doReset, 500);
+    }
+
+    _cancelScheduledReset() {
+      if (this._resetOnTransitionEnd) {
+        this._resetOnTransitionEnd();
+        this._resetOnTransitionEnd = null;
+      }
+      if (this._resetFallbackTimer) {
+        clearTimeout(this._resetFallbackTimer);
+        this._resetFallbackTimer = null;
+      }
+      this._onResetDone = null;
+    }
+
+    // ─── 清理等待播放的句柄 ───
+    _cleanupPlayingWaiter() {
+      if (this._playingHandler) {
+        this.videoEl.removeEventListener('playing', this._playingHandler);
+        this._playingHandler = null;
+      }
+      if (this._playingTimeout) {
+        clearTimeout(this._playingTimeout);
+        this._playingTimeout = null;
+      }
+    }
+
+    // ─── 播放 / 停止 ───
+    start() {
+      if (this.isPlaying || this.loadFailed) return;
+      this.isEndingGracefully = false;
+      this._cancelScheduledReset();
+      this._cleanupPlayingWaiter();
+
+      if (this.videoEl.readyState < 2) {
+        this._preloadVideo();
+        this.videoEl.addEventListener('canplay', () => this._doStart(), { once: true });
+        return;
+      }
+      this._doStart();
+    }
+
+    _doStart() {
+      if (this.loadFailed) return;
+      this.isPlaying = true;
+      this._primePending = false;                           // ★ iOS 预热：接管预热状态
+
+      // ★ iOS 预热：预热已把视频播起来 → 回 0 + 直接切 UI，不重复 play
+      if (!this.videoEl.paused) {
+        if (this.videoEl.currentTime > 0) {
+          try { this.videoEl.currentTime = 0; } catch (e) {}
+        }
+        this.container.classList.add('is-playing');
+        return;
+      }
+
+      // 确保视频在开头（通常已在 touchstart 时提前 seek）
+      if (this.videoEl.currentTime !== 0) {
+        this.videoEl.currentTime = 0;
+      }
+      // 先调用 play()，但不立即显示视频
+      const playPromise = this.videoEl.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          console.warn('LivePhoto: play failed', e);
+          this.stop();
+        });
+      }
+      // 等待视频真正开始播放后再切换画面
+      const onPlaying = () => {
+        this._cleanupPlayingWaiter();
+        if (!this.isPlaying) return; // 可能在等待期间被停止了
+        this.container.classList.add('is-playing');
+      };
+      this.videoEl.addEventListener('playing', onPlaying, { once: true });
+      this._playingHandler = onPlaying;
+      // 兜底：如果 500ms 内 playing 没触发，强制显示视频
+      this._playingTimeout = setTimeout(() => {
+        this._cleanupPlayingWaiter();
+        if (this.isPlaying) {
+          this.container.classList.add('is-playing');
+        }
+      }, 500);
+    }
+
+    stop() {
+      if ((!this.isPlaying && !this.isEndingGracefully) || this.loadFailed) return;
+      const wasEnding = this.isEndingGracefully;
+      this.isEndingGracefully = false;
+      this.isPlaying = false;
+      this.container.classList.remove('is-playing');
+      this._cleanupPlayingWaiter();
+      if (!this.videoEl.paused) this.videoEl.pause();
+      if (!wasEnding) {
+        this._scheduleVideoReset();
+      }
+    }
+
+    _endGracefully() {
+      if (this.isEndingGracefully || this.loadFailed) return;
+      this.isEndingGracefully = true;
+      this.isPlaying = false;
+      this.container.classList.remove('is-playing');
+      this.videoEl.pause();
+      this._cleanupPlayingWaiter();
+      this._scheduleVideoReset();
+      this._onResetDone = () => {
+        this.isEndingGracefully = false;
+      };
+    }
+
+    // ─── 触摸事件 ───
+    _onTouchStart(e) {
+      if (this.loadFailed) return;
+      this.touchStartX = e.touches[0].clientX;
+      this.touchStartY = e.touches[0].clientY;
+
+      this._preloadVideo();
+
+      // 提前将视频移到开头，利用长按延迟掩盖 seek 时间
+      if (this.videoEl.currentTime !== 0 && !this.isPlaying && !this.isEndingGracefully) {
+        this.videoEl.currentTime = 0;
+      }
+
+      this._primeVideo();                                  // ★ iOS 预热：同步栈内 play()
+
+      this._startLongPressTimer();
+    }
+
+    _onTouchMove(e) {
+      if (this.longPressTimer && this._isTouchMoved(e)) {
+        this._clearLongPressTimer();
+        this._abortPrime();                                // ★ iOS 预热：滑动取消，撤销预热
+      }
+    }
+
+    _onTouchEnd(e) {
+      if (this.loadFailed) return;
+      this._clearLongPressTimer();
+      if (this.isPlaying) this.stop();
+      else this._abortPrime();                             // ★ iOS 预热：长按未成立，撤销预热
+    }
+
+    _onTouchCancel(e) {
+      if (this.loadFailed) return;
+      this._clearLongPressTimer();
+      if (this.isPlaying) this.stop();
+      else this._abortPrime();                             // ★ iOS 预热：撤销预热
+    }
+
+    _isTouchMoved(e) {
+      const dx = Math.abs(e.touches[0].clientX - this.touchStartX);
+      const dy = Math.abs(e.touches[0].clientY - this.touchStartY);
+      return (dx > this.options.moveCancelThreshold || dy > this.options.moveCancelThreshold);
+    }
+
+    _startLongPressTimer() {
+      this._clearLongPressTimer();
+      this.longPressTimer = setTimeout(() => this.start(), this.options.longPressDelay);
+    }
+
+    _clearLongPressTimer() {
+      if (this.longPressTimer) {
+        clearTimeout(this.longPressTimer);
+        this.longPressTimer = null;
+      }
+    }
+
+    _bindEvents() {
+      this.container.addEventListener('mouseenter', () => this.start());
+      this.container.addEventListener('mouseleave', () => this.stop());
+      this.container.addEventListener('touchstart', this._onTouchStart.bind(this), { passive: true });
+      this.container.addEventListener('touchmove', this._onTouchMove.bind(this), { passive: true });
+      this.container.addEventListener('touchend', this._onTouchEnd.bind(this));
+      this.container.addEventListener('touchcancel', this._onTouchCancel.bind(this));
+    }
+
+    destroy() {
+      this._abortPrime();                                  // ★ iOS 预热：清理预热状态
+      this._clearLongPressTimer();
+      this._stopAllFakeProgress();
+      if (this.loadTimeout) {
+        clearTimeout(this.loadTimeout);
+        this.loadTimeout = null;
+      }
+      this._cancelScheduledReset();
+      this._cleanupPlayingWaiter();
+      const badge = this.container.querySelector('.live-photo-badge');
+      if (badge) badge.remove();
+      this.container.classList.remove('is-playing');
+    }
+  }
+
+  class LivePhoto {
+    static init(selector = '.live-photo', options = {}) {
+      let containers;
+      if (typeof selector === 'string') {
+        containers = document.querySelectorAll(selector);
+      } else if (selector instanceof HTMLElement) {
+        containers = [selector];
+      } else if (selector instanceof NodeList) {
+        containers = Array.from(selector);
+      } else {
+        throw new Error('LivePhoto.init: invalid selector');
+      }
+
+      const instances = [];
+      for (let container of containers) {
+        if (container.querySelector('.live-photo-badge')) {
+          console.warn('LivePhoto: already initialized on this container', container);
+          continue;
+        }
+        try {
+          const instance = new LivePhotoInstance(container, options);
+          instances.push(instance);
+        } catch (err) {
+          console.error('LivePhoto initialize faild:', err);
+        }
+      }
+      return instances;
+    }
+  }
+
+  return LivePhoto;
+}));
