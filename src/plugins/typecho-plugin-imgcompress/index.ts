@@ -1,51 +1,85 @@
 import type { PluginInitContext } from 'typecho/plugin-sdk';
 import { loadPluginConfig } from 'typecho/plugin-sdk';
+import { addCspSource, type CspDirectives } from '@/lib/security-headers';
 
 export default function init({ addHook, pluginId }: PluginInitContext): void {
+  // ──  CSP 限制 ──
+  addHook('csp:directives', pluginId, (directives: CspDirectives) => {
+    const cdns = [
+      'https://fastly.jsdelivr.net',
+      'https://cdn.jsdelivr.net',
+      'https://unpkg.com',
+      'https://esm.sh',
+    ];
+    addCspSource(directives, 'script-src', cdns);
+    addCspSource(directives, 'connect-src', cdns);
+    addCspSource(directives, 'worker-src', [...cdns, 'blob:']);
+    return directives;
+  });
+
+  // ── 2. 后台底部注入压缩脚本 ──
   addHook('admin:footer', pluginId, (html: string, extra?: { options?: Record<string, unknown> }) => {
     const config = loadPluginConfig(extra?.options ?? {}, pluginId);
-
-    // 把配置序列化进前端脚本
-    const configJson = JSON.stringify({
+    const cfg = {
       quality: parseFloat(String(config.quality ?? '0.8')),
-      maxDimension: parseInt(String(config.maxDimension ?? '1920'), 10),
+      maxDimension: config.maxDimension ? parseInt(String(config.maxDimension), 10) : undefined,
       outputFormat: config.outputFormat ?? 'webp',
-      maxFileSize: config.maxFileSize ? String(config.maxFileSize) : undefined,
-    });
+    };
 
     const script = `
-<script is:inline src="/js/imgcompress-bundle.js"></script>
 <script is:inline>
 (function() {
-  var CONFIG = ${configJson};
+  var CONFIG = ${JSON.stringify(cfg)};
+  var enginePromise = null;
 
-  // 判断是不是图片
-  function isImageFile(file) {
-    return file.type && file.type.startsWith('image/')
-      && !file.type.includes('gif')      // GIF 不动
-      && !file.type.includes('svg');     // SVG 不动
+  // 多 CDN 回退加载（你之前网页验证过的那套）
+  function loadEngine() {
+    if (enginePromise) return enginePromise;
+    var CDN_LIST = [
+      'https://fastly.jsdelivr.net/npm/@imgcompress/engine@1.0.0/+esm',
+      'https://cdn.jsdelivr.net/npm/@imgcompress/engine@1.0.0/+esm',
+      'https://unpkg.com/@imgcompress/engine@1.0.0/+esm',
+      'https://esm.sh/@imgcompress/engine@1.0.0'
+    ];
+    enginePromise = (async function() {
+      var lastErr = null;
+      for (var i = 0; i < CDN_LIST.length; i++) {
+        try {
+          var mod = await import(CDN_LIST[i]);
+          console.log('[imgcompress] 引擎已加载:', CDN_LIST[i]);
+          return mod;
+        } catch (e) { lastErr = e; }
+      }
+      throw lastErr || new Error('所有 CDN 均加载失败');
+    })();
+    return enginePromise;
   }
 
-  // 压缩单个文件
+  function isImageFile(file) {
+    return file.type && file.type.indexOf('image/') === 0
+      && file.type !== 'image/gif'
+      && file.type !== 'image/svg+xml'
+      && file.type !== 'image/bmp';
+  }
+
   async function compressFile(file) {
     if (!isImageFile(file)) return file;
-    if (typeof window.ImgCompressEngine === 'undefined') return file;
+    var engine;
+    try { engine = await loadEngine(); }
+    catch (e) { console.warn('[imgcompress] 引擎加载失败，使用原图:', e); return file; }
 
     try {
-      var result = await window.ImgCompressEngine.compressImage(file, {
-        quality: CONFIG.quality,
-        maxDimension: CONFIG.maxDimension,
-        outputFormat: CONFIG.outputFormat === 'original' ? undefined : CONFIG.outputFormat,
-        maxFileSize: CONFIG.maxFileSize,
-        preserveMetadata: false,
-      });
+      var options = { quality: CONFIG.quality, preserveMetadata: false };
+      if (CONFIG.maxDimension) options.maxDimension = CONFIG.maxDimension;
+      if (CONFIG.outputFormat !== 'original') options.outputFormat = CONFIG.outputFormat;
 
-      // 压缩后反而更大就用原图
+      var result = await engine.compressImage(file, options);
       if (result.blob.size >= file.size) return file;
 
-      // 构造新的 File 对象
       var ext = result.output.format === 'jpeg' ? 'jpg' : result.output.format;
       var name = file.name.replace(/\\.[^.]+$/, '') + '.' + ext;
+      console.log('[imgcompress]', file.name, '→', name,
+        (file.size/1024).toFixed(0) + 'KB →', (result.blob.size/1024).toFixed(0) + 'KB');
       return new File([result.blob], name, { type: result.blob.type });
     } catch (e) {
       console.warn('[imgcompress] 压缩失败，使用原图:', e);
@@ -53,81 +87,57 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     }
   }
 
-  // 核心：劫持 file input 的 change 事件（capture 阶段先于原 handler）
+  // 拦截 file input（capture 阶段先于原 handler）
   function patchFileInput() {
     var input = document.getElementById('file-input');
-    if (!input || input.__imgcompressPatched) return;
-    input.__imgcompressPatched = true;
+    if (!input || input.__icPatched) return;
+    input.__icPatched = true;
 
     input.addEventListener('change', async function(e) {
-      var files = Array.from(e.target.files || []);
-      if (!files.length) return;
-
-      // 先阻止原 handler 执行
+      if (input.__icRelease) return;
       e.stopImmediatePropagation();
-
-      var compressed = [];
-      for (var i = 0; i < files.length; i++) {
-        compressed.push(await compressFile(files[i]));
-      }
-
-      // 用压缩后的文件重建 FileList，再触发原逻辑
+      var files = Array.prototype.slice.call(input.files || []);
+      var done = [];
+      for (var i = 0; i < files.length; i++) done.push(await compressFile(files[i]));
       var dt = new DataTransfer();
-      compressed.forEach(function(f) { dt.items.add(f); });
+      done.forEach(function(f) { dt.items.add(f); });
       input.files = dt.files;
-
-      // 手动触发 change，让原 handler 拿到压缩后的文件
-      input.__imgcompressRelease = true;
+      input.__icRelease = true;
       input.dispatchEvent(new Event('change', { bubbles: true }));
-      input.__imgcompressRelease = false;
+      input.__icRelease = false;
     }, true);
   }
 
-  // 同理 patch 拖放
+  // 拦截拖放
   function patchDrop() {
     var area = document.querySelector('.upload-area');
-    if (!area || area.__imgcompressPatched) return;
-    area.__imgcompressPatched = true;
-
+    if (!area || area.__icPatched) return;
+    area.__icPatched = true;
     area.addEventListener('drop', async function(e) {
-      if (e.__imgcompressHandled) return;
+      if (e.__icHandled) return;
       e.stopImmediatePropagation();
-
-      var files = Array.from(e.dataTransfer.files || []);
-      var compressed = [];
-      for (var i = 0; i < files.length; i++) {
-        compressed.push(await compressFile(files[i]));
-      }
-
-      // 重新构造 dataTransfer 事件
+      var files = Array.prototype.slice.call(e.dataTransfer.files || []);
+      var done = [];
+      for (var i = 0; i < files.length; i++) done.push(await compressFile(files[i]));
       var dt = new DataTransfer();
-      compressed.forEach(function(f) { dt.items.add(f); });
-
-      var newEvent = new DragEvent('drop', {
-        bubbles: true, cancelable: true,
-        dataTransfer: dt
-      });
-      newEvent.__imgcompressHandled = true;
-      area.dispatchEvent(newEvent);
+      done.forEach(function(f) { dt.items.add(f); });
+      var ev = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
+      ev.__icHandled = true;
+      area.dispatchEvent(ev);
     }, true);
   }
 
-  function init() {
-    patchFileInput();
-    patchDrop();
-  }
-
+  function init() { patchFileInput(); patchDrop(); }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-  // Swup 页面切换后重新 patch
+  } else { init(); }
   document.addEventListener('page:view', init);
-})();
-</script>
-`;
 
+  // 提前预热引擎（用户选文件前就开始加载，不拦也不阻塞）
+  loadEngine().catch(function(){});
+})();
+<\/script>
+`;
     return html + script;
   });
 }
