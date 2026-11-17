@@ -9,7 +9,7 @@
     "plugin": {
       "id": "typecho-plugin-imgcompress",
       "name": "图片上传压缩",
-      "description": "后台上传图片时自动用 WASM 压缩，减少 R2 存储和加载体积",
+      "description": "后台附件图片压缩后上传",
       "author": "Link",
       "version": "1.0.0",
       "config": {
@@ -23,7 +23,7 @@
           "type": "text",
           "label": "最大边长(px)",
           "default": "1920",
-          "description": "超过此尺寸自动等比缩放"
+          "description": "超过此尺寸自动等比缩放，留空不限"
         },
         "outputFormat": {
           "type": "select",
@@ -32,14 +32,9 @@
           "options": {
             "original": "保持原格式",
             "webp": "转 WebP",
-            "jpeg": "转 JPEG"
+            "jpeg": "转 JPEG",
+            "avif": "转 AVIF（体积最小但编码器较大）"
           }
-        },
-        "maxFileSize": {
-          "type": "text",
-          "label": "目标体积",
-          "default": "500KB",
-          "description": "如 500KB、2MB，留空不限"
         }
       }
     }
