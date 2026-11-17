@@ -44,6 +44,9 @@ importers:
       typecho-plugin-scribe:
         specifier: file:src/plugins/typecho-plugin-scribe
         version: file:src/plugins/typecho-plugin-scribe
+      typecho-plugin-imgcompress:
+        specifier: file:src/plugins/typecho-plugin-imgcompress
+        version: file:src/plugins/typecho-plugin-imgcompress
       typecho-plugin-smtp-mailer:
         specifier: file:src/plugins/typecho-plugin-smtp-mailer
         version: file:src/plugins/typecho-plugin-smtp-mailer
@@ -4960,6 +4963,9 @@ packages:
   typecho-plugin-netease-link@file:src/plugins/typecho-plugin-netease-link:
     resolution: {directory: src/plugins/typecho-plugin-netease-link, type: directory}
 
+  typecho-plugin-imgcompress@file:src/plugins/typecho-plugin-imgcompress:
+    resolution: {directory: src/plugins/typecho-plugin-imgcompress, type: directory}
+  
   typecho-plugin-scribe@file:src/plugins/typecho-plugin-scribe:
     resolution: {directory: src/plugins/typecho-plugin-scribe, type: directory}
 
@@ -10354,6 +10360,8 @@ snapshots:
 
   typecho-plugin-netease-link@file:src/plugins/typecho-plugin-netease-link: {}
 
+  typecho-plugin-imgcompress@file:src/plugins/typecho-plugin-imgcompress: {}
+  
   typecho-plugin-scribe@file:src/plugins/typecho-plugin-scribe: {}
 
   typecho-plugin-smtp-mailer@file:src/plugins/typecho-plugin-smtp-mailer:
