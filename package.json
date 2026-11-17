@@ -42,6 +42,7 @@
     "typecho-plugin-smtp-mailer": "file:src/plugins/typecho-plugin-smtp-mailer",
     "typecho-plugin-livephoto": "file:src/plugins/typecho-plugin-livephoto",
     "typecho-plugin-netease-link": "file:src/plugins/typecho-plugin-netease-link",
+    "typecho-plugin-imgcompress": "file:src/plugins/typecho-plugin-imgcompress",
     "typecho-plugin-scribe": "file:src/plugins/typecho-plugin-scribe",
     "typecho-plugin-turnstile": "file:src/plugins/typecho-plugin-turnstile",
     "typecho-plugin-webdav": "file:src/plugins/typecho-plugin-webdav",
