@@ -1,19 +1,30 @@
 import type { PluginInitContext } from 'typecho/plugin-sdk';
 import { loadPluginConfig } from 'typecho/plugin-sdk';
-import { addCspSource, type CspDirectives } from '@/lib/security-headers';
 
-const ENGINE_CDN = 'https://fastly.jsdelivr.net/npm/@imgcompress/engine@1.0.0/+esm';
-const ENGINE_TIMEOUT = 6000;
+type CspDirectives = Record<string, string[]>;
+
+function addCspSource(directives: CspDirectives, key: string, sources: string[]): void {
+  const existing = new Set(directives[key] || []);
+  for (const src of sources) existing.add(src);
+  directives[key] = Array.from(existing);
+}
 
 export default function init({ addHook, pluginId }: PluginInitContext): void {
+  // ── 1. 放开 CDN / Worker 的 CSP 限制 ──
   addHook('csp:directives', pluginId, (directives: CspDirectives) => {
-    const cdns = ['https://fastly.jsdelivr.net', 'https://cdn.jsdelivr.net', 'https://unpkg.com', 'https://esm.sh'];
+    const cdns = [
+      'https://fastly.jsdelivr.net',
+      'https://cdn.jsdelivr.net',
+      'https://unpkg.com',
+      'https://esm.sh',
+    ];
     addCspSource(directives, 'script-src', cdns);
     addCspSource(directives, 'connect-src', cdns);
     addCspSource(directives, 'worker-src', [...cdns, 'blob:']);
     return directives;
   });
 
+  // ── 2. 后台底部注入压缩脚本（含 iOS 三层降级） ──
   addHook('admin:footer', pluginId, (html: string, extra?: { options?: Record<string, unknown> }) => {
     const config = loadPluginConfig(extra?.options ?? {}, pluginId);
     const cfg = {
@@ -25,191 +36,239 @@ export default function init({ addHook, pluginId }: PluginInitContext): void {
     const script = `
 <script is:inline>
 (function() {
-  'use strict';
-
   var CONFIG = ${JSON.stringify(cfg)};
-  var ENGINE_URL = '${ENGINE_CDN}';
-  var ENGINE_TIMEOUT = ${ENGINE_TIMEOUT};
-
-  // ─── 引擎加载：单一源 + 超时，不用多 CDN 回退（Safari 失败重试不可靠）───
   var enginePromise = null;
 
-  function loadEngine() {
-    if (enginePromise) return enginePromise;
-    enginePromise = new Promise(function(resolve, reject) {
-      var settled = false;
-      var timer = setTimeout(function() {
-        if (!settled) { settled = true; reject(new Error('引擎加载超时')); }
-      }, ENGINE_TIMEOUT);
-
-      import(ENGINE_URL).then(function(mod) {
-        if (!settled) { settled = true; clearTimeout(timer); resolve(mod); }
-      }).catch(function(err) {
-        if (!settled) { settled = true; clearTimeout(timer); reject(err); }
-      });
-    });
-    // 超时失败后允许后续重试一次（避免一次网络抖动就永久锁死）
-    enginePromise.catch(function() { enginePromise = null; });
-    return enginePromise;
-  }
-
-  // ─── 图片判定 ───
-  function isCompressibleImage(file) {
-    if (!file || !file.type) return false;
-    if (file.type.indexOf('image/') !== 0) return false;
-    if (file.type === 'image/gif') return false;
-    if (file.type === 'image/svg+xml') return false;
-    if (file.type === 'image/bmp') return false;
+  /* ============ 能力预检 ============ */
+  function envCapable() {
+    // 没有 WebAssembly 就不加载 WASM 编码器，直接走 Canvas 兜底
+    if (typeof WebAssembly === 'undefined') return false;
+    // 缺 canvas 2d 上下文时引擎和兜底都没意义
+    var testCanvas = document.createElement('canvas');
+    if (!testCanvas.getContext('2d')) return false;
     return true;
   }
 
-  // ─── 压缩核心 ───
-  async function compressFile(file) {
-    if (!isCompressibleImage(file)) return file;
-
-    var engine;
-    try { engine = await loadEngine(); }
-    catch (e) {
-      console.warn('[imgcompress] 引擎不可用，跳过压缩:', e);
-      return file;
-    }
-
-    try {
-      var options = { quality: CONFIG.quality, preserveMetadata: false };
-      if (CONFIG.maxDimension) options.maxDimension = CONFIG.maxDimension;
-      if (CONFIG.outputFormat !== 'original') options.outputFormat = CONFIG.outputFormat;
-
-      var result = await engine.compressImage(file, options);
-      if (!result || !result.blob || result.blob.size >= file.size) return file;
-
-      var format = (result.output && result.output.format) || '';
-      var ext = format === 'jpeg' ? 'jpg' : format;
-      var name = file.name.replace(/\\.[^.]+$/, '') + '.' + ext;
-
-      // 构造 File 可能在某些旧 iOS 上不稳定，用 Blob + 自定义 name 更稳妥
-      var out;
-      try {
-        out = new File([result.blob], name, { type: result.blob.type });
-      } catch (e) {
-        out = result.blob;
-        out.__icName = name;
+  /* ============ 引擎加载（多 CDN 回退 + 缓存） ============ */
+  function loadEngine() {
+    if (enginePromise) return enginePromise;
+    var CDN_LIST = [
+      'https://fastly.jsdelivr.net/npm/@imgcompress/engine@1.0.0/+esm',
+      'https://cdn.jsdelivr.net/npm/@imgcompress/engine@1.0.0/+esm',
+      'https://unpkg.com/@imgcompress/engine@1.0.0/+esm',
+      'https://esm.sh/@imgcompress/engine@1.0.0'
+    ];
+    enginePromise = (async function() {
+      var lastErr = null;
+      for (var i = 0; i < CDN_LIST.length; i++) {
+        try {
+          var mod = await import(CDN_LIST[i]);
+          console.log('[imgcompress] 引擎已加载:', CDN_LIST[i]);
+          return mod;
+        } catch (e) { lastErr = e; console.warn('[imgcompress] CDN 失败:', CDN_LIST[i], e && e.message); }
       }
+      throw lastErr || new Error('all CDN failed');
+    })();
+    return enginePromise;
+  }
 
-      console.log('[imgcompress]', file.name, '→', name,
-        (file.size / 1024).toFixed(0) + 'KB →', (result.blob.size / 1024).toFixed(0) + 'KB');
-      return out;
+  // 带超时的引擎压缩：worker 卡死 / WASM 加载慢时不无限等待
+  function compressWithEngine(file, options) {
+    var timeoutMs = 25000;
+    return Promise.race([
+      loadEngine().then(function(engine) { return engine.compressImage(file, options); }),
+      new Promise(function(_, reject) {
+        setTimeout(function() { reject(new Error('engine timeout ' + timeoutMs + 'ms')); }, timeoutMs);
+      })
+    ]);
+  }
+
+  /* ============ 第二层：Canvas 原生兜底（不依赖 Worker/WASM/createImageBitmap） ============ */
+  function decodeViaImage(file) {
+    return new Promise(function(resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function() { resolve(img); };
+      img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('image decode failed')); };
+      img.src = url;
+    });
+  }
+
+  function canvasToBlob(canvas, mime, quality) {
+    return new Promise(function(resolve, reject) {
+      // Safari 对 webp 编码不可靠；toBlob 不支持时会回退默认格式，这里做检测
+      canvas.toBlob(function(blob) {
+        if (blob) resolve(blob); else reject(new Error('toBlob failed'));
+      }, mime, quality);
+    });
+  }
+
+  async function compressViaCanvas(file) {
+    var img = await decodeViaImage(file);
+    var srcW = img.naturalWidth, srcH = img.naturalHeight;
+    if (!srcW || !srcH) throw new Error('zero dimensions');
+
+    var scale = 1;
+    if (CONFIG.maxDimension) {
+      var longest = Math.max(srcW, srcH);
+      if (longest > CONFIG.maxDimension) scale = CONFIG.maxDimension / longest;
+    }
+    var dstW = Math.max(1, Math.round(srcW * scale));
+    var dstH = Math.max(1, Math.round(srcH * scale));
+
+    var canvas = document.createElement('canvas');
+    canvas.width = dstW; canvas.height = dstH;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('no 2d context');
+
+    // JPEG 不支持透明，先铺白底
+    var isPng = file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/avif';
+    var outMime = isPng ? 'image/png' : 'image/jpeg';
+    if (outMime === 'image/jpeg') {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, dstW, dstH);
+    }
+    ctx.drawImage(img, 0, 0, dstW, dstH);
+    URL.revokeObjectURL(img.src);
+
+    var blob = await canvasToBlob(canvas, outMime, isPng ? undefined : CONFIG.quality);
+
+    // 兜底压完反而更大 → 返回 null，调用方用原图
+    if (blob.size >= file.size) return null;
+
+    var ext = outMime === 'image/jpeg' ? 'jpg' : 'png';
+    var name = file.name.replace(/\\.[^.]+$/, '') + '.' + ext;
+    try {
+      return new File([blob], name, { type: outMime });
     } catch (e) {
-      console.warn('[imgcompress] 压缩异常，使用原图:', e);
-      return file;
+      // 极老 iOS 没有 File 构造器，FormData 仍可接受 Blob
+      return new Blob([blob], { type: outMime });
     }
   }
 
-  // ─── 从 FormData 中找出图片文件，压缩后替换 ───
-  async function compressFormData(formData) {
-    if (!formData || typeof formData.entries !== 'function') return formData;
+  /* ============ 文件判定 ============ */
+  function isImageFile(file) {
+    return file.type && file.type.indexOf('image/') === 0
+      && file.type !== 'image/gif'
+      && file.type !== 'image/svg+xml'
+      && file.type !== 'image/bmp';
+  }
 
-    var replacements = [];
-    var iter = formData.entries();
-    var step;
-    while (!(step = iter.next()).done) {
-      var entry = step.value;
-      var key = entry[0];
-      var val = entry[1];
-      if (val instanceof File && isCompressibleImage(val)) {
-        replacements.push({ key: key, file: val });
-      }
-    }
+  /* ============ 三层降级 ============ */
+  async function compressFile(file) {
+    if (!isImageFile(file)) return file;
 
-    if (!replacements.length) return formData;
-
-    for (var i = 0; i < replacements.length; i++) {
-      var r = replacements[i];
-      var compressed = await compressFile(r.file);
-      if (compressed === r.file) continue;
-
-      // 用压缩结果替换原字段（FormData.set 会覆盖同名 key）
-      var filename = compressed.__icName || compressed.name || r.file.name;
+    // 第一层：WASM 引擎（环境不支持就直接跳过）
+    if (envCapable()) {
       try {
-        formData.set(r.key, compressed, filename);
-      } catch (e) {
-        // 如果 set 不支持第三参数，先 delete 再 append
-        formData.delete(r.key);
-        formData.append(r.key, compressed, filename);
-      }
-    }
-    return formData;
-  }
+        var options = { quality: CONFIG.quality, preserveMetadata: false };
+        if (CONFIG.maxDimension) options.maxDimension = CONFIG.maxDimension;
+        // 兜底路径不强行 webp；引擎路径按配置，但 iOS 上 webp 编码依赖 WASM，失败会进兜底
+        if (CONFIG.outputFormat !== 'original') options.outputFormat = CONFIG.outputFormat;
 
-  // ─── 判断是否是 Typecho 的上传请求 ───
-  function isUploadRequest(url) {
-    if (!url) return false;
+        var result = await compressWithEngine(file, options);
+        if (result && result.blob && result.blob.size < file.size) {
+          var ext = result.output.format === 'jpeg' ? 'jpg' : result.output.format;
+          var name = file.name.replace(/\\.[^.]+$/, '') + '.' + ext;
+          console.log('[imgcompress][engine]', file.name, '→', name,
+            (file.size / 1024).toFixed(0) + 'KB →', (result.blob.size / 1024).toFixed(0) + 'KB');
+          try { return new File([result.blob], name, { type: result.blob.type }); }
+          catch (e) { return new Blob([result.blob], { type: result.blob.type }); }
+        }
+      } catch (e) {
+        console.warn('[imgcompress][engine] 失败，转 Canvas 兜底:', e && (e.message || e.code || e));
+      }
+    } else {
+      console.warn('[imgcompress] 环境不支持 WASM，直接走 Canvas 兜底');
+    }
+
+    // 第二层：Canvas 原生压缩
     try {
-      return url.indexOf('/action/upload') !== -1
-        || url.indexOf('/action/multi-upload') !== -1;
-    } catch (e) { return false; }
+      var fallback = await compressViaCanvas(file);
+      if (fallback) {
+        console.log('[imgcompress][canvas]', file.name, '→', (fallback.size / 1024).toFixed(0) + 'KB');
+        return fallback;
+      }
+    } catch (e) {
+      console.warn('[imgcompress][canvas] 兜底也失败:', e && e.message);
+    }
+
+    // 第三层：原图
+    return file;
   }
 
-  // ─── 拦截 fetch ───
-  var nativeFetch = window.fetch;
-  if (nativeFetch) {
-    window.fetch = function(input, init) {
+  /* ============ 拦截上传入口 ============ */
+  var dataTransferSupported = typeof DataTransfer !== 'undefined';
+
+  function buildDataTransfer(files) {
+    var dt = new DataTransfer();
+    files.forEach(function(f) { dt.items.add(f); });
+    return dt;
+  }
+
+  function patchFileInput() {
+    var input = document.getElementById('file-input');
+    if (!input || input.__icPatched) return;
+    // 低版本 Safari 没有 DataTransfer，无法改写 files，直接放行原图
+    if (!dataTransferSupported) {
+      console.warn('[imgcompress] 当前浏览器不支持 DataTransfer，跳过文件拦截');
+      return;
+    }
+    input.__icPatched = true;
+
+    input.addEventListener('change', async function(e) {
+      if (input.__icRelease) return;
+      e.stopImmediatePropagation();
+      var files = Array.prototype.slice.call(input.files || []);
+      var done;
       try {
-        var url = typeof input === 'string' ? input : (input && input.url) || '';
-        if (isUploadRequest(url) && init && init.body instanceof FormData) {
-          var body = init.body;
-          return compressFormData(body).then(function(newBody) {
-            var newInit = {};
-            for (var k in init) { if (Object.prototype.hasOwnProperty.call(init, k)) newInit[k] = init[k]; }
-            newInit.body = newBody;
-            return nativeFetch.call(window, input, newInit);
-          }).catch(function(e) {
-            console.warn('[imgcompress] fetch 压缩流程异常，放行原请求:', e);
-            return nativeFetch.call(window, input, init);
-          });
-        }
-      } catch (e) {
-        // 任何异常都放行，不能阻断正常上传
+        done = [];
+        for (var i = 0; i < files.length; i++) done.push(await compressFile(files[i]));
+        var dt = buildDataTransfer(done);
+        input.files = dt.files;
+      } catch (err) {
+        console.warn('[imgcompress] 文件替换失败，放行原图:', err && err.message);
+        input.files = files;
       }
-      return nativeFetch.apply(window, arguments);
-    };
+      input.__icRelease = true;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.__icRelease = false;
+    }, true);
   }
 
-  // ─── 拦截 XMLHttpRequest（兜底，覆盖非 fetch 的上传路径）───
-  var XHR = window.XMLHttpRequest;
-  if (XHR && XHR.prototype && XHR.prototype.send) {
-    var nativeSend = XHR.prototype.send;
-    XHR.prototype.send = function(body) {
-      if (body instanceof FormData) {
-        var self = this;
-        var url = '';
-        try { url = self.__icUrl || ''; } catch (e) {}
-
-        if (isUploadRequest(url)) {
-          var args = arguments;
-          compressFormData(body).then(function(newBody) {
-            nativeSend.call(self, newBody);
-          }).catch(function(e) {
-            console.warn('[imgcompress] XHR 压缩异常，放行原请求:', e);
-            nativeSend.apply(self, args);
-          });
-          return;
-        }
+  function patchDrop() {
+    var area = document.querySelector('.upload-area');
+    if (!area || area.__icPatched) return;
+    if (!dataTransferSupported) return;
+    area.__icPatched = true;
+    area.addEventListener('drop', async function(e) {
+      if (e.__icHandled) return;
+      e.stopImmediatePropagation();
+      var files = Array.prototype.slice.call(e.dataTransfer.files || []);
+      var done;
+      try {
+        done = [];
+        for (var i = 0; i < files.length; i++) done.push(await compressFile(files[i]));
+        var dt = buildDataTransfer(done);
+        var ev = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
+        ev.__icHandled = true;
+        area.dispatchEvent(ev);
+      } catch (err) {
+        console.warn('[imgcompress] 拖放替换失败，放行原图:', err && err.message);
+        e.__icHandled = true;
+        area.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: e.dataTransfer }));
       }
-      return nativeSend.apply(this, arguments);
-    };
-
-    // 记录 open 的 URL，供 send 判断
-    var nativeOpen = XHR.prototype.open;
-    XHR.prototype.open = function(method, url) {
-      try { this.__icUrl = url; } catch (e) {}
-      return nativeOpen.apply(this, arguments);
-    };
+    }, true);
   }
 
-  // ─── 预热引擎（不阻塞、不报错）───
-  loadEngine().catch(function() {});
+  function init() { patchFileInput(); patchDrop(); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+  document.addEventListener('page:view', init);
 
-  console.log('[imgcompress] 已就绪（fetch / XHR 请求层拦截，兼容 iOS）');
+  // 预热引擎（不阻塞上传）；iOS 低价值，也照做
+  if (envCapable()) loadEngine().catch(function(){});
 })();
 <\/script>
 `;
